@@ -32,12 +32,12 @@ const FILES = {
 
 function extractConst(html, name) {
   // Captura desde "const NAME=" hasta el próximo "const CAPS=" o "</script>"
-  const re = new RegExp(`const ${name}=([\\s\\S]*?)(?=\\s*(?:const [A-Z_]+=|<\\/script>))`);
+  const re = new RegExp(`const ${name}=([\\s\\S]*?)(?=\\s*(?:const [A-Z][A-Z0-9_]*=|<\\/script>))`);
   const m = html.match(re);
   if (!m) return null;
-  const raw = m[1].trim().replace(/;$/, '');
+  const raw = m[1].trim().replace(/;\s*$/, '');
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw.trim().replace(/;\s*$/, ''));
   } catch (e) {
     console.warn(`  No se pudo parsear ${name}:`, e.message);
     return null;

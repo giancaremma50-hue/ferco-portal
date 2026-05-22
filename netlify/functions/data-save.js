@@ -102,7 +102,8 @@ exports.handler = async (event) => {
       body: JSON.stringify({ ok: true, updatedAt: body.updatedAt }),
     };
   } catch (err) {
-    console.error('data-save error:', err);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Error interno' }) };
+    const msg = err?.message || String(err);
+    console.error('data-save error:', msg, err?.stack);
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Error interno', detail: msg }) };
   }
 };
