@@ -1,0 +1,421 @@
+/* ── Estado admin ── */
+var ADMIN_DATA   = null;   // blob completo del país actual
+var ADMIN_PAIS   = 'GT';
+var ADMIN_PROG   = 'bdo';  // 'bdo' | '4x4'
+var ADMIN_PASS   = '';
+var focusedColIdx = null;  // índice de la col enfocada (null = ninguna)
+
+/* ── Auth ── */
+function isAuthenticated() { return !!sessionStorage.getItem('ferco-admin-pass'); }
+function storedPass()       { return sessionStorage.getItem('ferco-admin-pass') || ''; }
+
+async function tryLogin() {
+  var pw = document.getElementById('loginPw').value.trim();
+  if (!pw) return;
+  document.getElementById('loginErr').textContent = '';
+  document.getElementById('loginBtn').disabled = true;
+  document.getElementById('loginBtn').textContent = 'Verificando...';
+  try {
+    // Ping de verificación — no escribe datos ni crea snapshots
+    var res = await saveCountryData('GT', { _authTest: true }, pw);
+    // Si llega aquí, la contraseña es correcta
+    sessionStorage.setItem('ferco-admin-pass', pw);
+    ADMIN_PASS = pw;
+    document.getElementById('loginOverlay').style.display = 'none';
+    loadAdminCountry(ADMIN_PAIS);
+  } catch (err) {
+    if (err.status === 401) {
+      document.getElementById('loginErr').textContent = 'Contraseña incorrecta.';
+    } else {
+      document.getElementById('loginErr').textContent = 'Error: ' + err.message;
+    }
+    document.getElementById('loginBtn').disabled = false;
+    document.getElementById('loginBtn').textContent = 'Ingresar';
+  }
+}
+
+/* ── Carga de datos ── */
+async function loadAdminCountry(pais) {
+  ADMIN_PAIS = pais;
+  ADMIN_PASS = storedPass();
+  setLoading(true);
+  try {
+    ADMIN_DATA = await loadCountryData(pais);
+    buildAdminGrid();
+  } catch (err) {
+    showToast('Error cargando datos: ' + err.message, 'error');
+  }
+  setLoading(false);
+}
+
+function setLoading(on) {
+  document.getElementById('adminLoader').style.display  = on ? 'flex' : 'none';
+  document.getElementById('adminContent').style.display = on ? 'none' : 'block';
+}
+
+/* ── Construcción del grid ── */
+function buildAdminGrid() {
+  focusedColIdx = null;
+  var rows = ADMIN_PROG === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
+  var cols = getAdminCols();
+  var grid = document.getElementById('adminGrid');
+  grid.innerHTML = '';
+
+  // Columna fija: nombres
+  var fixedGroup = makeFixedCol(rows);
+  grid.appendChild(fixedGroup);
+
+  // Columnas de módulos
+  cols.forEach(function(col, ci) {
+    grid.appendChild(makeDataCol(col, ci, rows));
+  });
+
+  // Columna de notas
+  grid.appendChild(makeNotaCol(rows));
+
+  updateFocusHint();
+}
+
+function getAdminCols() {
+  if (ADMIN_PROG === 'bdo') {
+    var qr  = (ADMIN_DATA.config.bdoCols && ADMIN_DATA.config.bdoCols.qr)    || [];
+    var vid = (ADMIN_DATA.config.bdoCols && ADMIN_DATA.config.bdoCols.video) || [];
+    return qr.concat(vid);
+  }
+  return ADMIN_DATA.config.sesCols || [];
+}
+
+function colTag(colName) {
+  var n = colName.toLowerCase();
+  if (n.includes('qr'))   return '<span class="col-tag qr">QR</span>';
+  if (n.includes('video')) return '<span class="col-tag vid">Video</span>';
+  if (n.includes('ses') || n.includes('sión') || n.includes('sion')) return '<span class="col-tag ses">Sesión</span>';
+  return '';
+}
+
+function cellBg(v) {
+  if (v >= 80) return 'cell-good';
+  if (v >= 61) return 'cell-mid';
+  if (v > 0)   return 'cell-bad';
+  return 'cell-zero';
+}
+
+function makeFixedCol(rows) {
+  var group = document.createElement('div');
+  group.className = 'col-group fixed-col';
+
+  var hdr = document.createElement('div');
+  hdr.className = 'col-header no-click';
+  hdr.innerHTML = 'Colaborador <span style="font-size:11px;color:var(--muted);font-weight:400">— '+rows.length+' registros</span>';
+  group.appendChild(hdr);
+
+  rows.forEach(function(row, ri) {
+    var cell = document.createElement('div');
+    cell.className = 'col-cell name-cell';
+    cell.innerHTML =
+      '<div><div class="row-name">'+escHtml(row.nombre || '—')+'</div>'
+      +'<div class="row-suc">'+escHtml(row.sucursal || '')+'</div></div>'
+      +'<span class="del-row" title="Eliminar fila" onclick="deleteRow('+ri+')">✕</span>';
+    group.appendChild(cell);
+  });
+  return group;
+}
+
+function makeDataCol(colName, colIdx, rows) {
+  var group = document.createElement('div');
+  group.className = 'col-group';
+  group.dataset.colIdx = colIdx;
+
+  var hdr = document.createElement('div');
+  hdr.className = 'col-header';
+  hdr.title = 'Click para enfocar esta columna';
+  hdr.innerHTML = colTag(colName) + escHtml(colName) +
+    '<span class="del-col" title="Eliminar columna" onclick="event.stopPropagation();deleteColumn(\''+escHtml(colName)+'\')">✕</span>';
+  hdr.addEventListener('click', function() { focusCol(colIdx); });
+  group.appendChild(hdr);
+
+  rows.forEach(function(row, ri) {
+    var v = parseFloat((row.valores && row.valores[colName]) || 0);
+    var cell = document.createElement('div');
+    cell.className = 'col-cell ' + cellBg(v);
+
+    var inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = 0;
+    inp.max = 100;
+    inp.value = v;
+    inp.dataset.row = ri;
+    inp.dataset.col = colName;
+    inp.addEventListener('input', function() {
+      var val = Math.min(100, Math.max(0, parseFloat(this.value) || 0));
+      if (!ADMIN_DATA[ADMIN_PROG][ri].valores) ADMIN_DATA[ADMIN_PROG][ri].valores = {};
+      ADMIN_DATA[ADMIN_PROG][ri].valores[colName] = val;
+      cell.className = 'col-cell ' + cellBg(val);
+    });
+    inp.addEventListener('change', function() {
+      if (this.value === '' || isNaN(parseFloat(this.value))) this.value = 0;
+    });
+
+    cell.appendChild(inp);
+    group.appendChild(cell);
+  });
+  return group;
+}
+
+function makeNotaCol(rows) {
+  var group = document.createElement('div');
+  group.className = 'col-group nota-col';
+
+  var hdr = document.createElement('div');
+  hdr.className = 'col-header no-click';
+  hdr.textContent = '📝 Nota';
+  group.appendChild(hdr);
+
+  rows.forEach(function(row, ri) {
+    var cell = document.createElement('div');
+    cell.className = 'col-cell';
+
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'nota-input';
+    inp.placeholder = 'Agregar nota...';
+    inp.value = row.nota || '';
+    inp.dataset.row = ri;
+    inp.addEventListener('input', function() {
+      ADMIN_DATA[ADMIN_PROG][ri].nota = this.value;
+    });
+
+    cell.appendChild(inp);
+    group.appendChild(cell);
+  });
+  return group;
+}
+
+/* ── Animación de columna ── */
+function focusCol(clickedIdx) {
+  var allGroups = [...document.querySelectorAll('#adminGrid .col-group:not(.fixed-col):not(.nota-col)')];
+  if (allGroups.length === 0) return;
+
+  if (focusedColIdx === clickedIdx) {
+    // Segundo click: quitar foco
+    focusedColIdx = null;
+    allGroups.forEach(function(g) {
+      g.style.transform = '';
+      g.classList.remove('focused');
+    });
+    updateFocusHint();
+    return;
+  }
+
+  focusedColIdx = clickedIdx;
+  var clickedGroup = allGroups[clickedIdx];
+  var colWidth = clickedGroup.offsetWidth;
+
+  // Calcular cuánto desplazar la columna enfocada hacia la izquierda
+  var totalShift = 0;
+  for (var i = 0; i < clickedIdx; i++) {
+    totalShift += allGroups[i].offsetWidth;
+  }
+
+  allGroups.forEach(function(g, i) {
+    g.classList.remove('focused');
+    if (i < clickedIdx) {
+      // Columnas antes del foco: desplazar a la derecha
+      g.style.transform = 'translateX(' + colWidth + 'px)';
+    } else if (i === clickedIdx) {
+      // Columna enfocada: saltar al inicio (posición 1)
+      g.style.transform = 'translateX(-' + totalShift + 'px)';
+      g.classList.add('focused');
+    } else {
+      // Columnas después: sin cambio
+      g.style.transform = '';
+    }
+  });
+
+  updateFocusHint();
+}
+
+function updateFocusHint() {
+  var hint = document.getElementById('focusHint');
+  if (!hint) return;
+  if (focusedColIdx !== null) {
+    var cols = getAdminCols();
+    hint.textContent = 'Enfocando: ' + (cols[focusedColIdx] || '') + ' — Click en la columna de nuevo para quitar el foco';
+    hint.style.display = 'block';
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
+/* ── CRUD ── */
+function addRow() {
+  openModal('Agregar colaborador', [
+    { id: 'newNombre', label: 'Nombre completo', type: 'text', placeholder: 'Ej: Juan Pérez' },
+    { id: 'newSucursal', label: 'Sucursal', type: 'text', placeholder: 'Ej: Tegucigalpa Centro' },
+  ], function(vals) {
+    if (!vals.newNombre.trim()) { showToast('El nombre es requerido', 'error'); return false; }
+    var cols = getAdminCols();
+    var valores = {};
+    cols.forEach(function(c){ valores[c] = 0; });
+    var newRow = {
+      canal: '', region: '', zona: '',
+      sucursal: vals.newSucursal.trim(),
+      nombre: vals.newNombre.trim(),
+      valores: valores,
+      nota: '',
+    };
+    ADMIN_DATA[ADMIN_PROG].push(newRow);
+    buildAdminGrid();
+    showToast('Colaborador agregado');
+    return true;
+  });
+}
+
+function deleteRow(ri) {
+  var rows = ADMIN_DATA[ADMIN_PROG];
+  var name = rows[ri] && rows[ri].nombre ? rows[ri].nombre : 'esta fila';
+  if (!confirm('¿Eliminar a "' + name + '"? Esta acción no se puede deshacer sin guardar.')) return;
+  rows.splice(ri, 1);
+  buildAdminGrid();
+  showToast('Fila eliminada');
+}
+
+function addColumn() {
+  var isBdo = ADMIN_PROG === 'bdo';
+  var extraFields = isBdo ? [
+    { id: 'colType', label: 'Tipo de columna', type: 'select',
+      options: [{ v:'qr', l:'QR' }, { v:'video', l:'Video' }] }
+  ] : [];
+
+  openModal('Agregar columna', [
+    { id: 'newColName', label: 'Nombre de la columna', type: 'text', placeholder: 'Ej: QR Porcelanato' },
+    ...extraFields
+  ], function(vals) {
+    var name = vals.newColName.trim();
+    if (!name) { showToast('El nombre es requerido', 'error'); return false; }
+
+    if (isBdo) {
+      var type = vals.colType || 'qr';
+      if (type === 'qr') ADMIN_DATA.config.bdoCols.qr.push(name);
+      else               ADMIN_DATA.config.bdoCols.video.push(name);
+      ADMIN_DATA.bdo.forEach(function(r){ if(!r.valores) r.valores={}; r.valores[name] = 0; });
+    } else {
+      ADMIN_DATA.config.sesCols.push(name);
+      ADMIN_DATA.x4x.forEach(function(r){ if(!r.valores) r.valores={}; r.valores[name] = 0; });
+    }
+
+    buildAdminGrid();
+    showToast('Columna "' + name + '" agregada');
+    return true;
+  });
+}
+
+function deleteColumn(colName) {
+  if (!confirm('¿Eliminar la columna "' + colName + '"? Se perderá el dato de todos los colaboradores.')) return;
+
+  var cfg = ADMIN_DATA.config;
+  if (ADMIN_PROG === 'bdo') {
+    cfg.bdoCols.qr    = (cfg.bdoCols.qr    || []).filter(function(c){ return c !== colName; });
+    cfg.bdoCols.video = (cfg.bdoCols.video || []).filter(function(c){ return c !== colName; });
+    ADMIN_DATA.bdo.forEach(function(r){ if(r.valores) delete r.valores[colName]; });
+  } else {
+    cfg.sesCols = (cfg.sesCols || []).filter(function(c){ return c !== colName; });
+    ADMIN_DATA.x4x.forEach(function(r){ if(r.valores) delete r.valores[colName]; });
+  }
+
+  buildAdminGrid();
+  showToast('Columna eliminada');
+}
+
+/* ── Guardar ── */
+async function saveData() {
+  var btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+  try {
+    ADMIN_DATA.pais = ADMIN_PAIS;
+    var result = await saveCountryData(ADMIN_PAIS, ADMIN_DATA, storedPass());
+    showToast('Guardado y publicado ✓', 'success');
+    // Recargar para mostrar el nuevo corte histórico
+    ADMIN_DATA = await loadCountryData(ADMIN_PAIS);
+  } catch (err) {
+    if (err.status === 401) {
+      sessionStorage.removeItem('ferco-admin-pass');
+      document.getElementById('loginOverlay').style.display = 'flex';
+      showToast('Sesión expirada. Ingresa de nuevo.', 'error');
+    } else {
+      showToast('Error al guardar: ' + err.message, 'error');
+    }
+  }
+  btn.disabled = false;
+  btn.textContent = '💾 Guardar y publicar';
+}
+
+/* ── Selector de país/programa ── */
+function onAdminPais(pais) {
+  ADMIN_PAIS = pais;
+  focusedColIdx = null;
+  loadAdminCountry(pais);
+}
+
+function onAdminProg(prog) {
+  ADMIN_PROG = prog;
+  focusedColIdx = null;
+  if (ADMIN_DATA) buildAdminGrid();
+}
+
+/* ── Toast ── */
+var toastTimer = null;
+function showToast(msg, type) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.className = ''; }, 3000);
+}
+
+/* ── Modal genérico ── */
+function openModal(title, fields, onConfirm) {
+  var overlay = document.getElementById('modalOverlay');
+  var box = document.getElementById('modalBox');
+  box.querySelector('h3').textContent = title;
+  box.querySelector('p').textContent = '';
+
+  var fieldsHtml = fields.map(function(f) {
+    if (f.type === 'select') {
+      var opts = f.options.map(function(o){ return '<option value="'+o.v+'">'+o.l+'</option>'; }).join('');
+      return '<label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">'+f.label+'</label>'
+           + '<select id="mf_'+f.id+'">'+opts+'</select>';
+    }
+    return '<label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">'+f.label+'</label>'
+         + '<input type="'+f.type+'" id="mf_'+f.id+'" placeholder="'+escHtml(f.placeholder||'')+'"><br>';
+  }).join('');
+  box.querySelector('.modal-fields').innerHTML = fieldsHtml;
+
+  overlay.classList.add('open');
+
+  // Foco en primer campo
+  setTimeout(function(){
+    var firstInp = box.querySelector('input,select');
+    if (firstInp) firstInp.focus();
+  }, 50);
+
+  box.querySelector('.modal-confirm').onclick = function() {
+    var vals = {};
+    fields.forEach(function(f){
+      var el = document.getElementById('mf_'+f.id);
+      vals[f.id] = el ? el.value : '';
+    });
+    var ok = onConfirm(vals);
+    if (ok !== false) closeModal();
+  };
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+
+/* ── Helpers ── */
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}

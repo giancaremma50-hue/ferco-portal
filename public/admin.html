@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ferco — Admin</title>
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/admin.css">
+</head>
+<body style="background:#f1f5f9;min-height:100vh;font-family:Arial,sans-serif;font-size:14px">
+
+<!-- Login overlay -->
+<div id="loginOverlay">
+  <div class="login-box">
+    <h2>Panel de Administración</h2>
+    <p>Ingresa la contraseña maestra para continuar</p>
+    <input type="password" id="loginPw" placeholder="Contraseña..." autocomplete="current-password"
+      onkeydown="if(event.key==='Enter')tryLogin()">
+    <button id="loginBtn" onclick="tryLogin()">Ingresar</button>
+    <div class="error" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- Header -->
+<div class="admin-header">
+  <div style="display:flex;align-items:center;gap:12px">
+    <h1>Ferco Cerámica</h1>
+    <span class="badge-admin">Admin</span>
+  </div>
+  <a href="/" style="color:#94a3b8;font-size:13px;text-decoration:none">← Ver portal público</a>
+</div>
+
+<!-- Contenido admin -->
+<div style="padding:20px">
+
+  <!-- Toolbar -->
+  <div class="admin-toolbar">
+    <div class="admin-selectors">
+      <label>País:</label>
+      <select onchange="onAdminPais(this.value)" id="paisSel">
+        <option value="GT">🇬🇹 Guatemala</option>
+        <option value="HN">🇭🇳 Honduras</option>
+        <option value="SV">🇸🇻 El Salvador</option>
+      </select>
+      <label>Programa:</label>
+      <select onchange="onAdminProg(this.value)" id="progSel">
+        <option value="bdo">Bateador de Objeciones</option>
+        <option value="4x4">Despliegue 4x4</option>
+      </select>
+    </div>
+    <div class="sep"></div>
+    <button class="abtn" onclick="addRow()">＋ Colaborador</button>
+    <button class="abtn" onclick="addColumn()">＋ Columna</button>
+    <div class="sep"></div>
+    <button class="abtn primary" id="saveBtn" onclick="saveData()">💾 Guardar y publicar</button>
+  </div>
+
+  <!-- Hint de foco -->
+  <div id="focusHint" style="font-size:11px;color:var(--focus-text);background:var(--focus-bg);border-radius:10px;padding:8px 14px;margin-bottom:12px;display:none;font-weight:600"></div>
+
+  <!-- Loader -->
+  <div id="adminLoader" class="admin-loader">
+    <div class="spinner"></div> Cargando datos...
+  </div>
+
+  <!-- Grid de datos -->
+  <div id="adminContent" style="display:none">
+    <div id="adminGridWrap">
+      <div id="adminGrid"></div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:10px;padding:0 4px">
+      💡 Haz clic en el encabezado de una columna para enfocarla junto a los nombres. Clic de nuevo para quitar el foco.
+    </p>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Modal genérico -->
+<div id="modalOverlay">
+  <div class="modal-box" id="modalBox">
+    <h3></h3>
+    <p></p>
+    <div class="modal-fields"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal()">Cancelar</button>
+      <button class="confirm modal-confirm">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/admin.js"></script>
+<script>
+  // Inicialización
+  if (isAuthenticated()) {
+    ADMIN_PASS = storedPass();
+    document.getElementById('loginOverlay').style.display = 'none';
+    loadAdminCountry('GT');
+  }
+
+  // Sincronizar selector de programa con ADMIN_PROG (por si hay solo_4x4)
+  document.getElementById('progSel').addEventListener('change', function() {
+    onAdminProg(this.value);
+  });
+
+  // Cerrar modal con Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+</script>
+</body>
+</html>

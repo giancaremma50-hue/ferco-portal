@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ferco Cerámica — Portal de Formación</title>
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Encabezado con selector de país -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="htop">
+      <div>
+        <h1 id="pageTitle">Ferco Cerámica — Portal de Formación</h1>
+        <p id="pageSubtitle" style="color:var(--muted);margin-top:4px">Selecciona un país para ver el dashboard</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div id="togArea"></div>
+        <div class="mes-filter" id="mesFiltArea" style="display:none">
+          <button class="mes-btn" id="mesFiltBtn" onclick="toggleMesFilt()">📅 Meses <span class="arr">&#9660;</span></button>
+          <div class="mes-dd" id="mesFiltDD"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Selector de país -->
+    <div class="country-selector" style="margin-top:16px">
+      <button class="country-btn" id="btnGT" onclick="selectCountry('GT')">
+        <span class="flag">🇬🇹</span>Guatemala
+      </button>
+      <button class="country-btn" id="btnHN" onclick="selectCountry('HN')">
+        <span class="flag">🇭🇳</span>Honduras
+      </button>
+      <button class="country-btn" id="btnSV" onclick="selectCountry('SV')">
+        <span class="flag">🇸🇻</span>El Salvador
+      </button>
+    </div>
+
+    <!-- Tabs (ocultos hasta seleccionar país) -->
+    <div class="tabs" id="tabsRow" style="display:none">
+      <button class="tab active" data-tab="detalle" onclick="setTab('detalle',this)">Detalle</button>
+      <button class="tab" id="tabResumen" data-tab="resumen" onclick="setTab('resumen',this)">Resumen</button>
+      <button class="tab" data-tab="historico" onclick="setTab('historico',this)">Histórico</button>
+    </div>
+  </div>
+
+  <!-- Estado de carga -->
+  <div id="loader" style="display:none" class="loader"><div class="spinner"></div></div>
+  <div id="errorBox" style="display:none" class="error-box"></div>
+
+  <!-- KPIs -->
+  <div class="kpis" id="kpisRow" style="display:none"></div>
+
+  <!-- Filtros -->
+  <div class="card" id="filtersSection" style="display:none;margin-bottom:16px;padding:14px">
+    <div class="filters-row">
+      <div class="fgroup" id="filterCanal">
+        <label>Canal</label>
+        <select id="canalSel" onchange="onCanal()"><option value="">Todos</option></select>
+      </div>
+      <div class="fgroup" id="filterReg">
+        <label>Región</label>
+        <select id="regSel" onchange="onReg()"></select>
+      </div>
+      <div class="fgroup" id="filterZon">
+        <label>Zona</label>
+        <select id="zonSel" onchange="onZon()"></select>
+      </div>
+      <div class="fgroup">
+        <label>Sucursal</label>
+        <select id="sucSel" onchange="onSuc()"></select>
+      </div>
+      <div class="fgroup">
+        <label>Buscar colaborador</label>
+        <input id="srch" type="text" placeholder="Nombre..." oninput="onSearch()">
+      </div>
+      <button class="btn" onclick="clearAll()">✕ Limpiar</button>
+    </div>
+  </div>
+
+  <!-- Contenido de tabs -->
+  <div class="card" id="mainCard" style="display:none">
+    <div id="tab_detalle">
+      <div class="detail-grid">
+        <div id="branchPanel"></div>
+        <div style="overflow-x:auto">
+          <table><thead id="tHead"></thead><tbody id="tBody"></tbody></table>
+        </div>
+      </div>
+    </div>
+    <div id="tab_resumen" style="display:none"></div>
+    <div id="tab_historico" style="display:none"></div>
+  </div>
+
+  <p style="text-align:center;color:var(--muted);font-size:11px;margin-top:20px">
+    Ferco Cerámica · Portal de Formación Comercial
+    <span id="updatedAt" style="margin-left:8px"></span>
+  </p>
+
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/dashboard.js"></script>
+<script>
+var COUNTRY_NAMES = { GT: '🇬🇹 Guatemala', HN: '🇭🇳 Honduras', SV: '🇸🇻 El Salvador' };
+var currentCountry = null;
+
+function showLoader(show) {
+  document.getElementById('loader').style.display = show ? 'flex' : 'none';
+}
+function showError(msg) {
+  var el = document.getElementById('errorBox');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+async function selectCountry(pais) {
+  if (pais === currentCountry) return;
+  currentCountry = pais;
+
+  // Resaltar botón activo
+  ['GT','HN','SV'].forEach(function(p){
+    document.getElementById('btn'+p).classList.toggle('active', p===pais);
+  });
+
+  // Ocultar contenido anterior
+  document.getElementById('mainCard').style.display = 'none';
+  document.getElementById('kpisRow').style.display = 'none';
+  document.getElementById('filtersSection').style.display = 'none';
+  document.getElementById('tabsRow').style.display = 'none';
+  showError('');
+  showLoader(true);
+
+  try {
+    var data = await loadCountryData(pais);
+
+    // Actualizar título
+    document.getElementById('pageTitle').textContent = 'Ferco Cerámica — ' + COUNTRY_NAMES[pais];
+    var corte = data.updatedAt ? new Date(data.updatedAt).toLocaleDateString('es-GT') : '';
+    document.getElementById('pageSubtitle').textContent = 'Programas de Formación Comercial' + (corte ? ' · Corte: ' + corte : '');
+    var upd = document.getElementById('updatedAt');
+    if (upd && corte) upd.textContent = '· Actualizado: ' + corte;
+
+    // Mostrar UI
+    showLoader(false);
+    document.getElementById('tabsRow').style.display = 'flex';
+    document.getElementById('mainCard').style.display = 'block';
+
+    // Resetear tab a detalle
+    document.querySelectorAll('.tab').forEach(function(b){ b.classList.remove('active'); delete b.dataset.tab; });
+    var tD = document.querySelector('[data-tab="detalle"]') || document.querySelector('.tab');
+    if (tD) { tD.classList.add('active'); tD.dataset.tab = 'detalle'; }
+
+    // Mostrar/ocultar tab resumen
+    ['detalle','resumen','historico'].forEach(function(x){
+      var el = document.getElementById('tab_'+x);
+      if (el) el.style.display = x==='detalle' ? 'block' : 'none';
+    });
+
+    initDashboard(data);
+  } catch (err) {
+    showLoader(false);
+    showError('No se pudieron cargar los datos de ' + COUNTRY_NAMES[pais] + '. Intenta de nuevo.');
+    console.error(err);
+  }
+}
+</script>
+</body>
+</html>

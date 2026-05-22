@@ -1,0 +1,15 @@
+:root {
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --soft: #f8fafc;
+  --good: #166534;
+  --goodbg: #dcfce7;
+  --mid: #92400e;
+  --midbg: #fef3c7;
+  --bad: #991b1b;
+  --badbg: #fee2e2;
+  --focus-bg: #ede9fe;
+  --focus-border: #7c3aed;
+  --focus-text: #5b21b6;
+}
