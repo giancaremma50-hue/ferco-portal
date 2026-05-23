@@ -5,6 +5,18 @@ var ADMIN_PROG   = 'bdo';  // 'bdo' | '4x4'
 var ADMIN_PASS   = '';
 var focusedColIdx = null;  // índice de la col enfocada (null = ninguna)
 
+/* ── Helpers de programa/divisores ── */
+function getProgKey() { return ADMIN_PROG === 'bdo' ? 'bdo' : 'x4x'; }
+function getDivisor(colName) {
+  return ((ADMIN_DATA && ADMIN_DATA.config && ADMIN_DATA.config.divisors) || {})[colName] || 100;
+}
+function setDivisor(colName, val) {
+  var d = Math.max(1, parseInt(val) || 100);
+  if (!ADMIN_DATA.config.divisors) ADMIN_DATA.config.divisors = {};
+  ADMIN_DATA.config.divisors[colName] = d;
+  buildAdminGrid();
+}
+
 /* ── Auth ── */
 function isAuthenticated() { return !!sessionStorage.getItem('ferco-admin-pass'); }
 function storedPass()       { return sessionStorage.getItem('ferco-admin-pass') || ''; }
@@ -39,26 +51,76 @@ async function loadAdminCountry(pais) {
   ADMIN_PAIS = pais;
   ADMIN_PASS = storedPass();
   setLoading(true);
+  ADMIN_DATA = null;
   try {
     ADMIN_DATA = await loadCountryData(pais);
+    document.getElementById('adminContent').style.display = 'block';
+    document.getElementById('adminContent').innerHTML = '';
+    document.getElementById('adminContent').appendChild(buildGridWrapEl());
     buildAdminGrid();
   } catch (err) {
-    showToast('Error cargando datos: ' + err.message, 'error');
+    if (err.status === 404 && (pais === 'HN' || pais === 'SV')) {
+      showEmptyState(pais);
+    } else {
+      showToast('Error cargando datos: ' + err.message, 'error');
+    }
   }
   setLoading(false);
 }
 
+function showEmptyState(pais) {
+  var c = document.getElementById('adminContent');
+  c.style.display = 'block';
+  c.innerHTML = '<div style="text-align:center;padding:60px 20px">'
+    + '<p style="font-size:18px;font-weight:800;margin-bottom:8px">Sin datos para ' + pais + '</p>'
+    + '<p style="color:var(--muted);font-size:13px;margin-bottom:24px">Este país no tiene datos en el sistema. Puedes inicializarlo con los datos de referencia.</p>'
+    + '<button class="abtn primary" onclick="triggerInitCountry(\'' + pais + '\')">🚀 Inicializar ' + pais + ' con datos de referencia</button>'
+    + '</div>';
+}
+
+async function triggerInitCountry(pais) {
+  showToast('Inicializando ' + pais + '...');
+  try {
+    await initCountryData(pais, storedPass());
+    showToast(pais + ' inicializado correctamente ✓', 'success');
+    setTimeout(function() { loadAdminCountry(pais); }, 600);
+  } catch (err) {
+    if (err.status === 401) {
+      sessionStorage.removeItem('ferco-admin-pass');
+      document.getElementById('loginOverlay').style.display = 'flex';
+      showToast('Sesión expirada. Ingresa de nuevo.', 'error');
+    } else {
+      showToast('Error al inicializar: ' + err.message, 'error');
+    }
+  }
+}
+
+function buildGridWrapEl() {
+  var frag = document.createDocumentFragment();
+  var wrap = document.createElement('div');
+  wrap.id = 'adminGridWrap';
+  wrap.innerHTML = '<div id="adminGrid"></div>';
+  frag.appendChild(wrap);
+  var hint = document.createElement('p');
+  hint.style.cssText = 'font-size:11px;color:var(--muted);margin-top:10px;padding:0 4px';
+  hint.textContent = '💡 Clic en el encabezado de una columna para enfocarla. Doble clic en el nombre de columna o colaborador para renombrar.';
+  frag.appendChild(hint);
+  return frag;
+}
+
 function setLoading(on) {
-  document.getElementById('adminLoader').style.display  = on ? 'flex' : 'none';
-  document.getElementById('adminContent').style.display = on ? 'none' : 'block';
+  document.getElementById('adminLoader').style.display = on ? 'flex' : 'none';
+  if (on) document.getElementById('adminContent').style.display = 'none';
 }
 
 /* ── Construcción del grid ── */
 function buildAdminGrid() {
+  if (!ADMIN_DATA) return;
   focusedColIdx = null;
   var rows = ADMIN_PROG === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
   var cols = getAdminCols();
   var grid = document.getElementById('adminGrid');
+  if (!grid) return;
   grid.innerHTML = '';
 
   // Columna fija: nombres
@@ -112,10 +174,55 @@ function makeFixedCol(rows) {
   rows.forEach(function(row, ri) {
     var cell = document.createElement('div');
     cell.className = 'col-cell name-cell';
-    cell.innerHTML =
-      '<div><div class="row-name">'+escHtml(row.nombre || '—')+'</div>'
-      +'<div class="row-suc">'+escHtml(row.sucursal || '')+'</div></div>'
-      +'<span class="del-row" title="Eliminar fila" onclick="deleteRow('+ri+')">✕</span>';
+
+    var info = document.createElement('div');
+    info.style.flex = '1';
+    info.style.minWidth = '0';
+
+    var nameDiv = document.createElement('div');
+    nameDiv.className = 'row-name';
+    nameDiv.textContent = row.nombre || '—';
+    nameDiv.title = 'Doble clic para renombrar';
+    nameDiv.addEventListener('dblclick', function() {
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = row.nombre || '';
+      inp.className = 'col-rename-inp';
+      inp.style.width = '100%';
+      var applied = false;
+      function applyRename() {
+        if (applied) return; applied = true;
+        var nv = inp.value.trim();
+        if (nv) {
+          ADMIN_DATA[getProgKey()][ri].nombre = nv;
+          showToast('Colaborador renombrado');
+        }
+        buildAdminGrid();
+      }
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); applyRename(); }
+        if (e.key === 'Escape') { applied = true; buildAdminGrid(); }
+      });
+      inp.addEventListener('blur', applyRename);
+      nameDiv.parentNode.replaceChild(inp, nameDiv);
+      inp.select();
+    });
+
+    var sucDiv = document.createElement('div');
+    sucDiv.className = 'row-suc';
+    sucDiv.textContent = row.sucursal || '';
+
+    info.appendChild(nameDiv);
+    info.appendChild(sucDiv);
+
+    var delBtn = document.createElement('span');
+    delBtn.className = 'del-row';
+    delBtn.title = 'Eliminar fila';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', function() { deleteRow(ri); });
+
+    cell.appendChild(info);
+    cell.appendChild(delBtn);
     group.appendChild(cell);
   });
   return group;
@@ -126,31 +233,91 @@ function makeDataCol(colName, colIdx, rows) {
   group.className = 'col-group';
   group.dataset.colIdx = colIdx;
 
+  var divisor = getDivisor(colName);
+  var pk = getProgKey();
+
   var hdr = document.createElement('div');
   hdr.className = 'col-header';
   hdr.title = 'Click para enfocar esta columna';
-  hdr.innerHTML = colTag(colName) + escHtml(colName) +
-    '<span class="del-col" title="Eliminar columna" onclick="event.stopPropagation();deleteColumn(\''+escHtml(colName)+'\')">✕</span>';
+
+  // Inject tag + name (no innerHTML for the whole hdr to preserve listeners)
+  hdr.innerHTML = colTag(colName);
+  var nameSpan = document.createElement('span');
+  nameSpan.className = 'col-name-span';
+  nameSpan.textContent = colName;
+  nameSpan.title = 'Doble clic para renombrar';
+  nameSpan.addEventListener('dblclick', function(e) {
+    e.stopPropagation();
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = colName;
+    inp.className = 'col-rename-inp';
+    inp.addEventListener('click', function(e) { e.stopPropagation(); });
+    var applied = false;
+    function applyRename() {
+      if (applied) return; applied = true;
+      var nv = inp.value.trim();
+      if (nv && nv !== colName) renameColumn(colName, nv);
+      else buildAdminGrid();
+    }
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); applyRename(); }
+      if (e.key === 'Escape') { applied = true; buildAdminGrid(); }
+    });
+    inp.addEventListener('blur', applyRename);
+    nameSpan.parentNode.replaceChild(inp, nameSpan);
+    inp.select();
+  });
+  hdr.appendChild(nameSpan);
+
+  // Divisor widget
+  var divWrap = document.createElement('span');
+  divWrap.className = 'div-wrap';
+  divWrap.title = 'Valor máximo de la nota (divisor)';
+  divWrap.innerHTML = '÷ ';
+  var divInp = document.createElement('input');
+  divInp.type = 'number';
+  divInp.className = 'divisor-inp';
+  divInp.value = divisor;
+  divInp.min = 1;
+  divInp.step = 1;
+  divInp.addEventListener('click', function(e) { e.stopPropagation(); });
+  divInp.addEventListener('change', function(e) { e.stopPropagation(); setDivisor(colName, this.value); });
+  divWrap.appendChild(divInp);
+  hdr.appendChild(divWrap);
+
+  // Delete button
+  var delBtn = document.createElement('span');
+  delBtn.className = 'del-col';
+  delBtn.title = 'Eliminar columna';
+  delBtn.textContent = '✕';
+  delBtn.addEventListener('click', function(e) { e.stopPropagation(); deleteColumn(colName); });
+  hdr.appendChild(delBtn);
+
   hdr.addEventListener('click', function() { focusCol(colIdx); });
   group.appendChild(hdr);
 
   rows.forEach(function(row, ri) {
-    var v = parseFloat((row.valores && row.valores[colName]) || 0);
+    var pct = parseFloat((row.valores && row.valores[colName]) || 0);
+    var displayVal = divisor !== 100 ? Math.round(pct * divisor / 100) : pct;
+
     var cell = document.createElement('div');
-    cell.className = 'col-cell ' + cellBg(v);
+    cell.className = 'col-cell ' + cellBg(pct);
 
     var inp = document.createElement('input');
     inp.type = 'number';
     inp.min = 0;
-    inp.max = 100;
-    inp.value = v;
+    inp.max = divisor;
+    inp.value = displayVal;
     inp.dataset.row = ri;
     inp.dataset.col = colName;
+
     inp.addEventListener('input', function() {
-      var val = Math.min(100, Math.max(0, parseFloat(this.value) || 0));
-      if (!ADMIN_DATA[ADMIN_PROG][ri].valores) ADMIN_DATA[ADMIN_PROG][ri].valores = {};
-      ADMIN_DATA[ADMIN_PROG][ri].valores[colName] = val;
-      cell.className = 'col-cell ' + cellBg(val);
+      var raw = Math.min(divisor, Math.max(0, parseFloat(this.value) || 0));
+      var pctVal = divisor > 0 ? Math.min(100, Math.round(raw / divisor * 100)) : raw;
+      if (!ADMIN_DATA[pk][ri].valores) ADMIN_DATA[pk][ri].valores = {};
+      ADMIN_DATA[pk][ri].valores[colName] = pctVal;
+      cell.className = 'col-cell ' + cellBg(pctVal);
     });
     inp.addEventListener('change', function() {
       if (this.value === '' || isNaN(parseFloat(this.value))) this.value = 0;
@@ -182,7 +349,7 @@ function makeNotaCol(rows) {
     inp.value = row.nota || '';
     inp.dataset.row = ri;
     inp.addEventListener('input', function() {
-      ADMIN_DATA[ADMIN_PROG][ri].nota = this.value;
+      ADMIN_DATA[getProgKey()][ri].nota = this.value;
     });
 
     cell.appendChild(inp);
@@ -264,7 +431,7 @@ function addRow() {
       valores: valores,
       nota: '',
     };
-    ADMIN_DATA[ADMIN_PROG].push(newRow);
+    ADMIN_DATA[getProgKey()].push(newRow);
     buildAdminGrid();
     showToast('Colaborador agregado');
     return true;
@@ -272,7 +439,7 @@ function addRow() {
 }
 
 function deleteRow(ri) {
-  var rows = ADMIN_DATA[ADMIN_PROG];
+  var rows = ADMIN_DATA[getProgKey()];
   var name = rows[ri] && rows[ri].nombre ? rows[ri].nombre : 'esta fila';
   if (!confirm('¿Eliminar a "' + name + '"? Esta acción no se puede deshacer sin guardar.')) return;
   rows.splice(ri, 1);
@@ -289,10 +456,16 @@ function addColumn() {
 
   openModal('Agregar columna', [
     { id: 'newColName', label: 'Nombre de la columna', type: 'text', placeholder: 'Ej: QR Porcelanato' },
-    ...extraFields
-  ], function(vals) {
+    { id: 'colDivisor', label: 'Valor máximo de la nota (divisor)', type: 'number', placeholder: 'Ej: 5  (100 si ingresas % directamente)' },
+  ].concat(extraFields), function(vals) {
     var name = vals.newColName.trim();
     if (!name) { showToast('El nombre es requerido', 'error'); return false; }
+
+    var div = Math.max(1, parseInt(vals.colDivisor) || 100);
+    if (div !== 100) {
+      if (!ADMIN_DATA.config.divisors) ADMIN_DATA.config.divisors = {};
+      ADMIN_DATA.config.divisors[name] = div;
+    }
 
     if (isBdo) {
       var type = vals.colType || 'qr';
@@ -325,6 +498,33 @@ function deleteColumn(colName) {
 
   buildAdminGrid();
   showToast('Columna eliminada');
+}
+
+function renameColumn(oldName, newName) {
+  var pk = getProgKey();
+  var cfg = ADMIN_DATA.config;
+
+  if (ADMIN_PROG === 'bdo') {
+    cfg.bdoCols.qr    = (cfg.bdoCols.qr    || []).map(function(c){ return c === oldName ? newName : c; });
+    cfg.bdoCols.video = (cfg.bdoCols.video || []).map(function(c){ return c === oldName ? newName : c; });
+  } else {
+    cfg.sesCols = (cfg.sesCols || []).map(function(c){ return c === oldName ? newName : c; });
+  }
+
+  if (cfg.divisors && cfg.divisors[oldName] !== undefined) {
+    cfg.divisors[newName] = cfg.divisors[oldName];
+    delete cfg.divisors[oldName];
+  }
+
+  ADMIN_DATA[pk].forEach(function(row) {
+    if (row.valores && row.valores[oldName] !== undefined) {
+      row.valores[newName] = row.valores[oldName];
+      delete row.valores[oldName];
+    }
+  });
+
+  buildAdminGrid();
+  showToast('Columna renombrada a "' + newName + '"');
 }
 
 /* ── Guardar ── */

@@ -46,7 +46,12 @@
 .col-header .col-tag.qr { background: #dbeafe; color: #1e40af; }
 .col-header .col-tag.vid { background: #dcfce7; color: var(--good); }
 .col-header .col-tag.ses { background: #ede9fe; color: var(--focus-text); }
-.col-header .del-col { margin-left: auto; font-size: 14px; opacity: 0; transition: opacity .15s; cursor: pointer; color: var(--bad); padding: 2px 4px; }
+.col-name-span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.div-wrap { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 1px 5px; background: #fff; flex-shrink: 0; cursor: default; }
+.divisor-inp { width: 32px; border: none; font-size: 11px; font-weight: 700; text-align: center; color: var(--text); background: transparent; -moz-appearance: textfield; padding: 0; }
+.divisor-inp::-webkit-inner-spin-button, .divisor-inp::-webkit-outer-spin-button { -webkit-appearance: none; }
+.divisor-inp:focus { outline: none; color: #7c3aed; }
+.col-header .del-col { font-size: 14px; opacity: 0; transition: opacity .15s; cursor: pointer; color: var(--bad); padding: 2px 4px; flex-shrink: 0; }
 .col-group:hover .col-header .del-col { opacity: 0.6; }
 .col-header .del-col:hover { opacity: 1 !important; }
 
@@ -104,3 +109,6 @@
 
 .focus-hint { font-size: 11px; color: var(--muted); text-align: center; padding: 6px; background: var(--focus-bg); border-radius: 0 0 14px 14px; display: none; }
 .col-group.focused ~ .focus-hint { display: block; }
+
+/* ── Rename inline input ── */
+.col-rename-inp { flex: 1; border: 1px solid var(--focus-border); border-radius: 6px; padding: 2px 6px; font-size: 12px; font-weight: 700; background: var(--focus-bg); color: var(--focus-text); outline: none; min-width: 0; }

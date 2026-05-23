@@ -17,17 +17,13 @@
         <h1 id="pageTitle">Ferco Cerámica — Portal de Formación</h1>
         <p id="pageSubtitle" style="color:var(--muted);margin-top:4px">Selecciona un país para ver el dashboard</p>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div id="headerControls" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div id="togArea"></div>
-        <div class="mes-filter" id="mesFiltArea" style="display:none">
-          <button class="mes-btn" id="mesFiltBtn" onclick="toggleMesFilt()">📅 Meses <span class="arr">&#9660;</span></button>
-          <div class="mes-dd" id="mesFiltDD"></div>
-        </div>
       </div>
     </div>
 
-    <!-- Selector de país -->
-    <div class="country-selector" style="margin-top:16px">
+    <!-- Selector de país (se minimiza al seleccionar) -->
+    <div class="country-selector" id="countrySel" style="margin-top:16px">
       <button class="country-btn" id="btnGT" onclick="selectCountry('GT')">
         <span class="flag">🇬🇹</span>Guatemala
       </button>
@@ -56,7 +52,7 @@
 
   <!-- Filtros -->
   <div class="card" id="filtersSection" style="display:none;margin-bottom:16px;padding:14px">
-    <div class="filters-row">
+    <div id="filtersMain" class="filters-row">
       <div class="fgroup" id="filterCanal">
         <label>Canal</label>
         <select id="canalSel" onchange="onCanal()"><option value="">Todos</option></select>
@@ -78,6 +74,13 @@
         <input id="srch" type="text" placeholder="Nombre..." oninput="onSearch()">
       </div>
       <button class="btn" onclick="clearAll()">✕ Limpiar</button>
+    </div>
+    <!-- Filtro de meses (aparece en Resumen GT e Histórico todos) -->
+    <div id="mesRow" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+      <div class="mes-filter" id="mesFiltArea">
+        <button class="mes-btn" id="mesFiltBtn" onclick="toggleMesFilt()">📅 Meses <span class="arr">&#9660;</span></button>
+        <div class="mes-dd" id="mesFiltDD"></div>
+      </div>
     </div>
   </div>
 
@@ -105,8 +108,10 @@
 <script src="/js/api.js"></script>
 <script src="/js/dashboard.js"></script>
 <script>
-var COUNTRY_NAMES = { GT: '🇬🇹 Guatemala', HN: '🇭🇳 Honduras', SV: '🇸🇻 El Salvador' };
+var COUNTRY_NAMES  = { GT: '🇬🇹 Guatemala', HN: '🇭🇳 Honduras', SV: '🇸🇻 El Salvador' };
+var COUNTRY_FLAGS  = { GT: '🇬🇹', HN: '🇭🇳', SV: '🇸🇻' };
 var currentCountry = null;
+var countryCompact = false;
 
 function showLoader(show) {
   document.getElementById('loader').style.display = show ? 'flex' : 'none';
@@ -120,6 +125,19 @@ function showError(msg) {
 async function selectCountry(pais) {
   if (pais === currentCountry) return;
   currentCountry = pais;
+
+  // Compactar selector y moverlo al header (solo la primera vez)
+  if (!countryCompact) {
+    countryCompact = true;
+    var sel = document.getElementById('countrySel');
+    var hc  = document.getElementById('headerControls');
+    sel.classList.add('compact');
+    ['GT','HN','SV'].forEach(function(c) {
+      document.getElementById('btn'+c).innerHTML =
+        '<span class="flag">'+COUNTRY_FLAGS[c]+'</span> '+c;
+    });
+    hc.insertBefore(sel, hc.firstChild);
+  }
 
   // Resaltar botón activo
   ['GT','HN','SV'].forEach(function(p){
@@ -151,10 +169,9 @@ async function selectCountry(pais) {
 
     // Resetear tab a detalle
     document.querySelectorAll('.tab').forEach(function(b){ b.classList.remove('active'); delete b.dataset.tab; });
-    var tD = document.querySelector('[data-tab="detalle"]') || document.querySelector('.tab');
-    if (tD) { tD.classList.add('active'); tD.dataset.tab = 'detalle'; }
+    var firstTab = document.querySelector('[data-tab="detalle"]') || document.querySelector('.tab');
+    if (firstTab) { firstTab.classList.add('active'); firstTab.dataset.tab = 'detalle'; }
 
-    // Mostrar/ocultar tab resumen
     ['detalle','resumen','historico'].forEach(function(x){
       var el = document.getElementById('tab_'+x);
       if (el) el.style.display = x==='detalle' ? 'block' : 'none';
