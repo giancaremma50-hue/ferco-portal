@@ -20,6 +20,31 @@ function sc(v)   { if(v>=80) return 'good'; if(v>=61) return 'mid'; if(v>0) retu
 function svc(v)  { if(v>=80) return 'cg'; if(v>=61) return 'cm'; if(v>0) return 'cb'; return 'c0'; }
 function ssv(v)  { if(v>=80) return 'sg'; if(v>=61) return 'sm'; if(v>0) return 'sb'; return 's0'; }
 
+/* ── Sparkline SVG ── */
+function makeSpark(vals, colorCls) {
+  if (!vals || !vals.length) return '';
+  var W=200,H=44,PX=8,PY=6;
+  var minV=Math.min.apply(null,vals), maxV=Math.max.apply(null,vals);
+  if(minV===maxV){minV=Math.max(0,minV-15);maxV=Math.min(100,maxV+15);}
+  var rng=maxV-minV, n=vals.length;
+  function cx(i){return PX+(n>1?(i/(n-1))*(W-2*PX):W/2);}
+  function cy(v){return H-PY-((v-minV)/rng)*(H-2*PY);}
+  var stroke=colorCls==='cg'?'#16a34a':colorCls==='cm'?'#d97706':colorCls==='cb'?'#dc2626':'#94a3b8';
+  var d=vals.map(function(v,i){return(i===0?'M':'L')+cx(i).toFixed(1)+','+cy(v).toFixed(1);}).join(' ');
+  var dots=vals.map(function(v,i){var l=i===n-1;return'<circle cx="'+cx(i).toFixed(1)+'" cy="'+cy(v).toFixed(1)+'" r="'+(l?3.5:2)+'" fill="'+stroke+'" opacity="'+(l?1:.5)+'"/>';}).join('');
+  return '<svg class="hist-spark" width="100%" height="'+H+'" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'
+    +'<path d="'+d+'" fill="none" stroke="'+stroke+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+    +dots+'</svg>';
+}
+
+/* ── Promedio de sesiones de una entrada de historico ── */
+function sucSesAvg(sd) {
+  if(!sd) return 0;
+  var ks=Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;});
+  var vals=ks.map(function(k){return sd[k]||0;}).filter(function(v){return v>0;});
+  return vals.length?Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length):0;
+}
+
 /* ── Filtrado de filas ── */
 function fdRows() {
   var CANAL   = cfg('tieneCanal');
@@ -302,7 +327,6 @@ function tgNode(el) {
 
 /* ── Filtro meses ── */
 function buildMesFilter() {
-  if (!cfg('tieneResumen')) return;
   var conData=new Set(mesesConData()),selSet=selMeses===null?conData:new Set(selMeses);
   var ano=new Date().getFullYear(),items='';
   for(var m=1;m<=12;m++){
@@ -357,98 +381,170 @@ function getSucsF() {
 function renderHistorico() {
   var cortes=(DATA.historico&&DATA.historico.cortes)||[];
   if(!cortes.length){document.getElementById('tab_historico').innerHTML='<p style="color:var(--muted);padding:16px">Sin histórico.</p>';return;}
-  var isBdo=state.prog==='bdo',mk1=isBdo?'bdo_qr':'4x4_s1',mk2=isBdo?'bdo_video':'4x4_s2';
-  var l1=isBdo?'QR':'S1',l2=isBdo?'Video':'S2';
-  var sucs=cfg('tieneResumen')?getSucsF():[...new Set(ad().map(function(r){return r.sucursal;}).filter(isV))].filter(function(s){
-    var ahs=new Set();for(var i=0;i<cortes.length;i++)Object.keys(cortes[i].sucursales||{}).forEach(function(k){if(isV(k))ahs.add(k);});return ahs.has(s);}).sort();
-  var first=cortes[0],last=cortes[cortes.length-1];
-  function acF(c,k){return avg(sucs.map(function(s){var sd=c.sucursales[s];return sd&&sd[k]!=null?sd[k]:0;}));}
-  var v1i=acF(first,mk1),v1f=acF(last,mk1),v2i=acF(first,mk2),v2f=acF(last,mk2),d1=v1f-v1i,d2=v2f-v2i;
-  var bs='—',bv=0,ts='—',td=-999;
-  for(var si=0;si<sucs.length;si++){var s=sucs[si],sdN=last.sucursales[s],vN=sdN&&sdN[mk1]!=null?sdN[mk1]:0;
-    if(vN>bv){bv=vN;bs=s;}var sd0=first.sucursales[s],dl=vN-(sd0&&sd0[mk1]!=null?sd0[mk1]:0);if(dl>td){td=dl;ts=s;}}
-  var mej=0;for(var si=0;si<sucs.length;si++){var s2=sucs[si],sd0b=first.sucursales[s2],sdNb=last.sucursales[s2];
-    if((sdNb&&sdNb[mk1]!=null?sdNb[mk1]:0)>(sd0b&&sd0b[mk1]!=null?sd0b[mk1]:0))mej++;}
-  var pm=sucs.length?Math.round(mej/sucs.length*100):0;
-  function db(d){return d>0?'pos':d<0?'neg':'neu';}function ds(d){return d>0?'+':'';}function ar(d){return d>0?'↑':d<0?'↓':'→';}
-  var fi=first.fecha.split('-').reverse().join('/'),ff=last.fecha.split('-').reverse().join('/');
-  var summary='<div class="hist-summary">'
-    +'<div class="hist-stat"><div class="hs-lbl">'+l1+' — Período</div><div class="hs-main"><span class="hs-arrow '+svc(v1f)+'">'+ar(d1)+'</span><span class="hs-val '+svc(v1f)+'">'+v1f+'%</span><span class="hs-delta '+db(d1)+'">'+ds(d1)+d1+' pts</span></div><div class="hs-sub">Inicio <strong>'+v1i+'%</strong> → Hoy <strong>'+v1f+'%</strong></div><div class="hs-period">'+fi+' → '+ff+'</div></div>'
-    +'<div class="hist-stat"><div class="hs-lbl">'+l2+' — Período</div><div class="hs-main"><span class="hs-arrow '+svc(v2f)+'">'+ar(d2)+'</span><span class="hs-val '+svc(v2f)+'">'+v2f+'%</span><span class="hs-delta '+db(d2)+'">'+ds(d2)+d2+' pts</span></div><div class="hs-sub">Inicio <strong>'+v2i+'%</strong> → Hoy <strong>'+v2f+'%</strong></div><div class="hs-period">'+fi+' → '+ff+'</div></div>'
-    +'<div class="hist-stat"><div class="hs-lbl">🏆 Mejor Sucursal</div><div class="hs-main"><span class="hs-val '+svc(bv)+'">'+bv+'%</span></div><div class="hs-sub"><strong>'+bs+'</strong></div><div class="hs-period">En '+l1+' — último corte</div></div>'
-    +'<div class="hist-stat"><div class="hs-lbl">📈 Mayor Avance</div><div class="hs-main"><span class="hs-val '+(td>0?'cg':td<0?'cb':'c0')+'">'+(td>0?'+':'')+td+' pts</span></div><div class="hs-sub"><strong>'+ts+'</strong></div><div class="hs-period">'+pm+'% mejoraron</div></div>'
-    +'</div>';
+  var isBdo=state.prog==='bdo';
 
-  if (cfg('tieneResumen')) {
-    var mmA=semMapActivo(),sems=Object.keys(mmA).map(Number).sort(function(a,b){return a-b;});
-    if(!sems.length){document.getElementById('tab_historico').innerHTML=summary+'<p style="color:var(--muted);padding:14px">Selecciona un mes con datos.</p>';return;}
-    var actHead=isBdo?'<th class="sfix" style="background:#dcfce7;color:var(--good)">QR Actual</th><th style="background:#dcfce7;color:var(--good)">Video Actual</th>'
-                    :'<th style="background:#dcfce7;color:var(--good)">Sesión Actual</th>';
-    function actColSuc(suc){var sd=last.sucursales[suc];
-      if(isBdo){var qr=sd&&sd.bdo_qr!=null?sd.bdo_qr:0,vid=sd&&sd.bdo_video!=null?sd.bdo_video:0;
-        return'<td><span class="pill '+sc(qr)+'">'+qr+'%</span></td><td><span class="pill '+sc(vid)+'">'+vid+'%</span></td>';}
-      var ks=sd?Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;}):[];
-      var vals=ks.map(function(k){return sd[k]||0;}).filter(function(v){return v>0;});
-      var va=vals.length?Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length):0;
-      return'<td><span class="pill '+sc(va)+'">'+va+'%</span></td>';}
-    function thH(){var h='';for(var i=0;i<sems.length;i++)h+='<th class="th-sem sem-sep" colspan="2">S'+sems[i]+'</th>';return h;}
-    function thSH(){var h='';for(var i=0;i<sems.length;i++)h+='<th class="th-sub sem-sep">Prom.'+l1+'</th><th class="th-sub">Prom.'+l2+'</th>';return h;}
-    function sCells(suc){var h='';
-      for(var i=0;i<sems.length;i++){var cv=mmA[sems[i]];
-        var v1s=cv.map(function(c){var sd=c.sucursales[suc];return sd&&sd[mk1]!=null?sd[mk1]:null;}).filter(function(v){return v!==null;});
-        var v2s=cv.map(function(c){var sd=c.sucursales[suc];return sd&&sd[mk2]!=null?sd[mk2]:null;}).filter(function(v){return v!==null;});
+  /* Sucursales activas (con histórico) */
+  var sucs;
+  if(cfg('tieneResumen')){
+    sucs=getSucsF();
+  } else {
+    var _ahs=new Set();
+    for(var i=0;i<cortes.length;i++)Object.keys(cortes[i].sucursales||{}).forEach(function(k){if(isV(k))_ahs.add(k);});
+    sucs=[...new Set(ad().map(function(r){return r.sucursal;}).filter(isV))].filter(function(s){return _ahs.has(s);}).sort();
+  }
+
+  var first=cortes[0], last=cortes[cortes.length-1];
+  var fi=first.fecha.split('-').reverse().join('/'), ff=last.fecha.split('-').reverse().join('/');
+
+  /* Timelines para sparklines (todos los cortes) */
+  var qrTL=[], vidTL=[], sesTL=[];
+  for(var ci=0;ci<cortes.length;ci++){
+    var co=cortes[ci];
+    if(isBdo){
+      var qrV=sucs.map(function(s){var sd=co.sucursales[s];return sd&&sd.bdo_qr!=null?sd.bdo_qr:null;}).filter(function(v){return v!==null;});
+      qrTL.push(qrV.length?Math.round(qrV.reduce(function(a,b){return a+b;},0)/qrV.length):0);
+      var vdV=sucs.map(function(s){var sd=co.sucursales[s];return sd&&sd.bdo_video!=null?sd.bdo_video:null;}).filter(function(v){return v!==null;});
+      vidTL.push(vdV.length?Math.round(vdV.reduce(function(a,b){return a+b;},0)/vdV.length):0);
+    } else {
+      var svs=[];
+      sucs.forEach(function(s){var sd=co.sucursales[s];if(sd)Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;}).forEach(function(k){if(sd[k]!=null)svs.push(sd[k]);});});
+      sesTL.push(svs.length?Math.round(svs.reduce(function(a,b){return a+b;},0)/svs.length):0);
+    }
+  }
+
+  /* Valores resumen */
+  var v1i=qrTL[0]||0, v1f=qrTL[qrTL.length-1]||0, d1=v1f-v1i;
+  var v2i=vidTL[0]||0, v2f=vidTL[vidTL.length-1]||0, d2=v2f-v2i;
+  var vSI=sesTL[0]||0, vSF=sesTL[sesTL.length-1]||0, dS=vSF-vSI;
+
+  /* Mejor sucursal y mayor avance */
+  var bs='—',bv=0,ts='—',td=-999,mej=0;
+  for(var si=0;si<sucs.length;si++){
+    var s=sucs[si], sdN=last.sucursales[s], sd0=first.sucursales[s];
+    var vN=isBdo?(sdN&&sdN.bdo_qr!=null?sdN.bdo_qr:0):sucSesAvg(sdN);
+    var v0=isBdo?(sd0&&sd0.bdo_qr!=null?sd0.bdo_qr:0):sucSesAvg(sd0);
+    if(vN>bv){bv=vN;bs=s;}
+    var dl=vN-v0; if(dl>td){td=dl;ts=s;}
+    if(vN>v0)mej++;
+  }
+  var pm=sucs.length?Math.round(mej/sucs.length*100):0;
+
+  function db(d){return d>0?'pos':d<0?'neg':'neu';}
+  function ds(d){return d>0?'+':'';}
+
+  /* Tarjetas resumen */
+  var summary;
+  if(isBdo){
+    summary='<div class="hist-summary">'
+      +'<div class="hist-stat"><div class="hs-lbl">QR — Período</div>'
+      +makeSpark(qrTL,svc(v1f))
+      +'<div class="hs-main"><span class="hs-val '+svc(v1f)+'">'+v1f+'%</span><span class="hs-delta '+db(d1)+'">'+ds(d1)+d1+' pts</span></div>'
+      +'<div class="hs-sub">Inicio <strong>'+v1i+'%</strong> → Hoy <strong>'+v1f+'%</strong></div>'
+      +'<div class="hs-period">'+fi+' → '+ff+'</div></div>'
+      +'<div class="hist-stat"><div class="hs-lbl">Video — Período</div>'
+      +makeSpark(vidTL,svc(v2f))
+      +'<div class="hs-main"><span class="hs-val '+svc(v2f)+'">'+v2f+'%</span><span class="hs-delta '+db(d2)+'">'+ds(d2)+d2+' pts</span></div>'
+      +'<div class="hs-sub">Inicio <strong>'+v2i+'%</strong> → Hoy <strong>'+v2f+'%</strong></div>'
+      +'<div class="hs-period">'+fi+' → '+ff+'</div></div>'
+      +'<div class="hist-stat"><div class="hs-lbl">🏆 Mejor Sucursal</div><div class="hs-main"><span class="hs-val '+svc(bv)+'">'+bv+'%</span></div><div class="hs-sub"><strong>'+bs+'</strong></div><div class="hs-period">En QR — último corte</div></div>'
+      +'<div class="hist-stat"><div class="hs-lbl">📈 Mayor Avance</div><div class="hs-main"><span class="hs-val '+(td>0?'cg':td<0?'cb':'c0')+'">'+(td>0?'+':'')+td+' pts</span></div><div class="hs-sub"><strong>'+ts+'</strong></div><div class="hs-period">'+pm+'% mejoraron</div></div>'
+      +'</div>';
+  } else {
+    summary='<div class="hist-summary" style="grid-template-columns:repeat(3,1fr)">'
+      +'<div class="hist-stat"><div class="hs-lbl">Promedio de Despliegue</div>'
+      +makeSpark(sesTL,svc(vSF))
+      +'<div class="hs-main"><span class="hs-val '+svc(vSF)+'">'+vSF+'%</span><span class="hs-delta '+db(dS)+'">'+ds(dS)+dS+' pts</span></div>'
+      +'<div class="hs-sub">Inicio <strong>'+vSI+'%</strong> → Hoy <strong>'+vSF+'%</strong></div>'
+      +'<div class="hs-period">'+fi+' → '+ff+'</div></div>'
+      +'<div class="hist-stat"><div class="hs-lbl">🏆 Mejor Sucursal</div><div class="hs-main"><span class="hs-val '+svc(bv)+'">'+bv+'%</span></div><div class="hs-sub"><strong>'+bs+'</strong></div><div class="hs-period">Último corte</div></div>'
+      +'<div class="hist-stat"><div class="hs-lbl">📈 Mayor Avance</div><div class="hs-main"><span class="hs-val '+(td>0?'cg':td<0?'cb':'c0')+'">'+(td>0?'+':'')+td+' pts</span></div><div class="hs-sub"><strong>'+ts+'</strong></div><div class="hs-period">'+pm+'% mejoraron</div></div>'
+      +'</div>';
+  }
+
+  /* Tabla por semanas (aplica para todos los países) */
+  var mmA=semMapActivo(), sems=Object.keys(mmA).map(Number).sort(function(a,b){return a-b;});
+  if(!sems.length){
+    document.getElementById('tab_historico').innerHTML=summary+'<p style="color:var(--muted);padding:14px">Selecciona un mes con datos.</p>';
+    return;
+  }
+
+  var actHead=isBdo
+    ?'<th class="sfix" style="background:#dcfce7;color:var(--good)">QR Actual</th><th style="background:#dcfce7;color:var(--good)">Video Actual</th>'
+    :'<th style="background:#dcfce7;color:var(--good)">Despliegue Actual</th>';
+
+  function actColSuc(suc){
+    var sd=last.sucursales[suc];
+    if(isBdo){
+      var qr=sd&&sd.bdo_qr!=null?sd.bdo_qr:0, vid=sd&&sd.bdo_video!=null?sd.bdo_video:0;
+      return'<td><span class="pill '+sc(qr)+'">'+qr+'%</span></td><td><span class="pill '+sc(vid)+'">'+vid+'%</span></td>';
+    }
+    var va=sucSesAvg(sd);
+    return'<td><span class="pill '+sc(va)+'">'+va+'%</span></td>';
+  }
+
+  function thH(){
+    var h='';
+    for(var i=0;i<sems.length;i++){
+      if(isBdo) h+='<th class="th-sem sem-sep" colspan="2">S'+sems[i]+'</th>';
+      else h+='<th class="th-sem sem-sep">S'+sems[i]+'</th>';
+    }
+    return h;
+  }
+  function thSH(){
+    var h='';
+    for(var i=0;i<sems.length;i++){
+      if(isBdo) h+='<th class="th-sub sem-sep">Prom.QR</th><th class="th-sub">Prom.Video</th>';
+      else h+='<th class="th-sub sem-sep">Prom.Desp.</th>';
+    }
+    return h;
+  }
+  function sCells(suc){
+    var h='';
+    for(var i=0;i<sems.length;i++){
+      var cv=mmA[sems[i]];
+      if(isBdo){
+        var v1s=cv.map(function(c){var sd=c.sucursales[suc];return sd&&sd.bdo_qr!=null?sd.bdo_qr:null;}).filter(function(v){return v!==null;});
+        var v2s=cv.map(function(c){var sd=c.sucursales[suc];return sd&&sd.bdo_video!=null?sd.bdo_video:null;}).filter(function(v){return v!==null;});
         var p1=v1s.length?Math.round(v1s.reduce(function(a,b){return a+b;},0)/v1s.length):0;
         var p2=v2s.length?Math.round(v2s.reduce(function(a,b){return a+b;},0)/v2s.length):0;
-        h+='<td class="sem-sep"><span class="pill '+sc(p1)+'">'+p1+'%</span></td><td><span class="pill '+sc(p2)+'">'+p2+'%</span></td>';}return h;}
-    var tbody2='';for(var si=0;si<sucs.length;si++){var s=sucs[si];tbody2+='<tr><td class="sfix">'+s+'</td>'+sCells(s)+actColSuc(s)+'</tr>';}
-    document.getElementById('tab_historico').innerHTML=summary
-      +'<div class="hist-scroll"><table class="hist-table" style="width:auto"><thead>'
-      +'<tr><th class="sfix" rowspan="2">Sucursal</th>'+thH()+actHead+'</tr>'
-      +'<tr>'+thSH()+'</tr></thead><tbody>'+tbody2+'</tbody></table></div>';
-  } else {
-    var mesesD=[...new Set(cortes.map(function(c){return c.mesKey||c.fecha.substring(0,7);}))].sort();
-    var mesBar='<div class="mes-bar"><label>📅 Período</label>'
-      +'<select class="mes-select" id="mesSel" onchange="mesSelCambio(this.value)">'
-      +'<option value="todos">Todos los cortes</option>'
-      +mesesD.map(function(mk){return'<option value="'+mk+'">'+mk+'</option>';}).join('')
-      +'</select><span class="mes-hint">'+cortes.length+' corte(s) total</span></div>';
-    var cv=cortes;
-    var thD=cv.map(function(c){return'<th colspan="2" style="text-align:center">'+c.fecha.split('-').reverse().join('/')+'</th>';}).join('');
-    var thS=cv.map(function(){return'<th>'+l1+'</th><th>'+l2+'</th>';}).join('');
-    var tbody3='';for(var si=0;si<sucs.length;si++){var s3=sucs[si];
-      var cells3=cv.map(function(c){var sd=c.sucursales[s3];var v1=sd&&sd[mk1]!=null?sd[mk1]:0,v2b=sd&&sd[mk2]!=null?sd[mk2]:0;
-        return'<td><span class="pill '+sc(v1)+'">'+v1+'%</span></td><td><span class="pill '+sc(v2b)+'">'+v2b+'%</span></td>';}).join('');
-      tbody3+='<tr><td class="sfix">'+s3+'</td>'+cells3+'</tr>';}
-    document.getElementById('tab_historico').innerHTML=summary+mesBar
-      +'<div class="hist-scroll"><table class="hist-table" style="width:auto"><thead>'
-      +'<tr><th class="sfix" rowspan="2">Sucursal</th>'+thD+'</tr>'
-      +'<tr>'+thS+'</tr></thead><tbody>'+tbody3+'</tbody></table></div>';
+        h+='<td class="sem-sep"><span class="pill '+sc(p1)+'">'+p1+'%</span></td><td><span class="pill '+sc(p2)+'">'+p2+'%</span></td>';
+      } else {
+        var svs2=[];
+        cv.forEach(function(c){var sd=c.sucursales[suc];if(sd)Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;}).forEach(function(k){if(sd[k]!=null)svs2.push(sd[k]);});});
+        var pa=svs2.length?Math.round(svs2.reduce(function(a,b){return a+b;},0)/svs2.length):0;
+        h+='<td class="sem-sep"><span class="pill '+sc(pa)+'">'+pa+'%</span></td>';
+      }
+    }
+    return h;
   }
-}
-function mesSelCambio(v){
-  var cortes=(DATA.historico&&DATA.historico.cortes)||[];
-  var cv=v==='todos'?cortes:cortes.filter(function(c){return(c.mesKey||c.fecha.substring(0,7))===v;});
-  var isBdo=state.prog==='bdo',mk1=isBdo?'bdo_qr':'4x4_s1',mk2=isBdo?'bdo_video':'4x4_s2';
-  var l1=isBdo?'QR':'S1',l2=isBdo?'Video':'S2';
-  var sucs=getSucsF();
-  var thD=cv.map(function(c){return'<th colspan="2" style="text-align:center">'+c.fecha.split('-').reverse().join('/')+'</th>';}).join('');
-  var thS=cv.map(function(){return'<th>'+l1+'</th><th>'+l2+'</th>';}).join('');
-  var tbody='';for(var si=0;si<sucs.length;si++){var s=sucs[si];
-    var cells=cv.map(function(c){var sd=c.sucursales[s];var v1=sd&&sd[mk1]!=null?sd[mk1]:0,v2=sd&&sd[mk2]!=null?sd[mk2]:0;
-      return'<td><span class="pill '+sc(v1)+'">'+v1+'%</span></td><td><span class="pill '+sc(v2)+'">'+v2+'%</span></td>';}).join('');
-    tbody+='<tr><td class="sfix">'+s+'</td>'+cells+'</tr>';}
-  var tbl=document.querySelector('.hist-table');
-  if(tbl){tbl.querySelector('thead').innerHTML='<tr><th class="sfix" rowspan="2">Sucursal</th>'+thD+'</tr><tr>'+thS+'</tr>';
-    tbl.querySelector('tbody').innerHTML=tbody;}
+
+  var tbody='';
+  for(var si=0;si<sucs.length;si++){var s=sucs[si];tbody+='<tr><td class="sfix">'+s+'</td>'+sCells(s)+actColSuc(s)+'</tr>';}
+
+  document.getElementById('tab_historico').innerHTML=summary
+    +'<div class="hist-scroll"><table class="hist-table" style="width:auto"><thead>'
+    +'<tr><th class="sfix" rowspan="2">Sucursal</th>'+thH()+actHead+'</tr>'
+    +'<tr>'+thSH()+'</tr></thead><tbody>'+tbody+'</tbody></table></div>';
 }
 
 /* ── Control general ── */
+function _applyTabVisibility(tn) {
+  document.getElementById('kpisRow').style.display = tn==='detalle' ? 'grid' : 'none';
+  /* filtersSection: visible en detalle e historico; en resumen solo si GT */
+  var showFilters = tn!=='resumen' || cfg('tieneResumen');
+  document.getElementById('filtersSection').style.display = showFilters ? 'block' : 'none';
+  /* filtersMain: oculto en resumen */
+  var fm=document.getElementById('filtersMain');
+  if(fm) fm.style.display = tn==='resumen' ? 'none' : '';
+  /* mesRow: historico (todos) o resumen GT */
+  var mr=document.getElementById('mesRow');
+  if(mr) mr.style.display = (tn==='historico'||(tn==='resumen'&&cfg('tieneResumen'))) ? 'block' : 'none';
+}
 function render() {
   var t = document.querySelector('.tab.active'); var tn = t ? t.dataset.tab : 'detalle';
-  document.getElementById('kpisRow').style.display = tn==='detalle' ? 'grid' : 'none';
-  document.getElementById('filtersSection').style.display = tn==='resumen' ? 'none' : 'block';
-  if (tn==='detalle')       { renderKPIs(); renderDetalle(); }
-  else if (tn==='resumen')  renderResumen();
+  _applyTabVisibility(tn);
+  if (tn==='detalle')        { renderKPIs(); renderDetalle(); }
+  else if (tn==='resumen')   renderResumen();
   else if (tn==='historico') renderHistorico();
 }
 function buildTog() {
@@ -477,12 +573,11 @@ function clearAll(){
   popSels();render();
 }
 function setTab(t, btn) {
-  document.getElementById('kpisRow').style.display = t==='detalle' ? 'grid' : 'none';
-  document.getElementById('filtersSection').style.display = t==='resumen' ? 'none' : 'block';
   ['detalle','resumen','historico'].forEach(function(x){
     var el=document.getElementById('tab_'+x);if(el)el.style.display=x===t?'block':'none';});
   document.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active');delete b.dataset.tab;});
-  btn.classList.add('active');btn.dataset.tab=t;render();
+  btn.classList.add('active');btn.dataset.tab=t;
+  render();
 }
 
 /* ── Inicialización ── */
@@ -502,13 +597,12 @@ function initDashboard(data) {
   var elReg   = document.getElementById('filterReg');
   var elZon   = document.getElementById('filterZon');
   var tabRes  = document.getElementById('tabResumen');
-  var mesFilt = document.getElementById('mesFiltArea');
 
   if (elCanal) elCanal.style.display = tieneCanal ? '' : 'none';
   if (elReg)   elReg.style.display   = tieneRegion ? '' : 'none';
   if (elZon)   elZon.style.display   = tieneZona   ? '' : 'none';
   if (tabRes)  tabRes.style.display  = tieneResumen ? '' : 'none';
-  if (mesFilt) mesFilt.style.display = tieneResumen ? '' : 'none';
+  /* mesFilt visibility is managed by _applyTabVisibility via render() */
 
   // Ocultar toggle BDO/4x4 si solo_4x4
   var togArea = document.getElementById('togArea');

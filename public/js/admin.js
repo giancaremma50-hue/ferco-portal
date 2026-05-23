@@ -5,6 +5,18 @@ var ADMIN_PROG   = 'bdo';  // 'bdo' | '4x4'
 var ADMIN_PASS   = '';
 var focusedColIdx = null;  // índice de la col enfocada (null = ninguna)
 
+/* ── Helpers de programa/divisores ── */
+function getProgKey() { return ADMIN_PROG === 'bdo' ? 'bdo' : 'x4x'; }
+function getDivisor(colName) {
+  return ((ADMIN_DATA && ADMIN_DATA.config && ADMIN_DATA.config.divisors) || {})[colName] || 100;
+}
+function setDivisor(colName, val) {
+  var d = Math.max(1, parseInt(val) || 100);
+  if (!ADMIN_DATA.config.divisors) ADMIN_DATA.config.divisors = {};
+  ADMIN_DATA.config.divisors[colName] = d;
+  buildAdminGrid();
+}
+
 /* ── Auth ── */
 function isAuthenticated() { return !!sessionStorage.getItem('ferco-admin-pass'); }
 function storedPass()       { return sessionStorage.getItem('ferco-admin-pass') || ''; }
@@ -126,31 +138,68 @@ function makeDataCol(colName, colIdx, rows) {
   group.className = 'col-group';
   group.dataset.colIdx = colIdx;
 
+  var divisor = getDivisor(colName);
+  var pk = getProgKey();
+
   var hdr = document.createElement('div');
   hdr.className = 'col-header';
   hdr.title = 'Click para enfocar esta columna';
-  hdr.innerHTML = colTag(colName) + escHtml(colName) +
-    '<span class="del-col" title="Eliminar columna" onclick="event.stopPropagation();deleteColumn(\''+escHtml(colName)+'\')">✕</span>';
+
+  // Inject tag + name (no innerHTML for the whole hdr to preserve listeners)
+  hdr.innerHTML = colTag(colName);
+  var nameSpan = document.createElement('span');
+  nameSpan.className = 'col-name-span';
+  nameSpan.textContent = colName;
+  hdr.appendChild(nameSpan);
+
+  // Divisor widget
+  var divWrap = document.createElement('span');
+  divWrap.className = 'div-wrap';
+  divWrap.title = 'Valor máximo de la nota (divisor)';
+  divWrap.innerHTML = '÷ ';
+  var divInp = document.createElement('input');
+  divInp.type = 'number';
+  divInp.className = 'divisor-inp';
+  divInp.value = divisor;
+  divInp.min = 1;
+  divInp.step = 1;
+  divInp.addEventListener('click', function(e) { e.stopPropagation(); });
+  divInp.addEventListener('change', function(e) { e.stopPropagation(); setDivisor(colName, this.value); });
+  divWrap.appendChild(divInp);
+  hdr.appendChild(divWrap);
+
+  // Delete button
+  var delBtn = document.createElement('span');
+  delBtn.className = 'del-col';
+  delBtn.title = 'Eliminar columna';
+  delBtn.textContent = '✕';
+  delBtn.addEventListener('click', function(e) { e.stopPropagation(); deleteColumn(colName); });
+  hdr.appendChild(delBtn);
+
   hdr.addEventListener('click', function() { focusCol(colIdx); });
   group.appendChild(hdr);
 
   rows.forEach(function(row, ri) {
-    var v = parseFloat((row.valores && row.valores[colName]) || 0);
+    var pct = parseFloat((row.valores && row.valores[colName]) || 0);
+    var displayVal = divisor !== 100 ? Math.round(pct * divisor / 100) : pct;
+
     var cell = document.createElement('div');
-    cell.className = 'col-cell ' + cellBg(v);
+    cell.className = 'col-cell ' + cellBg(pct);
 
     var inp = document.createElement('input');
     inp.type = 'number';
     inp.min = 0;
-    inp.max = 100;
-    inp.value = v;
+    inp.max = divisor;
+    inp.value = displayVal;
     inp.dataset.row = ri;
     inp.dataset.col = colName;
+
     inp.addEventListener('input', function() {
-      var val = Math.min(100, Math.max(0, parseFloat(this.value) || 0));
-      if (!ADMIN_DATA[ADMIN_PROG][ri].valores) ADMIN_DATA[ADMIN_PROG][ri].valores = {};
-      ADMIN_DATA[ADMIN_PROG][ri].valores[colName] = val;
-      cell.className = 'col-cell ' + cellBg(val);
+      var raw = Math.min(divisor, Math.max(0, parseFloat(this.value) || 0));
+      var pctVal = divisor > 0 ? Math.min(100, Math.round(raw / divisor * 100)) : raw;
+      if (!ADMIN_DATA[pk][ri].valores) ADMIN_DATA[pk][ri].valores = {};
+      ADMIN_DATA[pk][ri].valores[colName] = pctVal;
+      cell.className = 'col-cell ' + cellBg(pctVal);
     });
     inp.addEventListener('change', function() {
       if (this.value === '' || isNaN(parseFloat(this.value))) this.value = 0;
@@ -264,7 +313,7 @@ function addRow() {
       valores: valores,
       nota: '',
     };
-    ADMIN_DATA[ADMIN_PROG].push(newRow);
+    ADMIN_DATA[getProgKey()].push(newRow);
     buildAdminGrid();
     showToast('Colaborador agregado');
     return true;
@@ -272,7 +321,7 @@ function addRow() {
 }
 
 function deleteRow(ri) {
-  var rows = ADMIN_DATA[ADMIN_PROG];
+  var rows = ADMIN_DATA[getProgKey()];
   var name = rows[ri] && rows[ri].nombre ? rows[ri].nombre : 'esta fila';
   if (!confirm('¿Eliminar a "' + name + '"? Esta acción no se puede deshacer sin guardar.')) return;
   rows.splice(ri, 1);
@@ -289,10 +338,16 @@ function addColumn() {
 
   openModal('Agregar columna', [
     { id: 'newColName', label: 'Nombre de la columna', type: 'text', placeholder: 'Ej: QR Porcelanato' },
-    ...extraFields
-  ], function(vals) {
+    { id: 'colDivisor', label: 'Valor máximo de la nota (divisor)', type: 'number', placeholder: 'Ej: 5  (100 si ingresas % directamente)' },
+  ].concat(extraFields), function(vals) {
     var name = vals.newColName.trim();
     if (!name) { showToast('El nombre es requerido', 'error'); return false; }
+
+    var div = Math.max(1, parseInt(vals.colDivisor) || 100);
+    if (div !== 100) {
+      if (!ADMIN_DATA.config.divisors) ADMIN_DATA.config.divisors = {};
+      ADMIN_DATA.config.divisors[name] = div;
+    }
 
     if (isBdo) {
       var type = vals.colType || 'qr';
