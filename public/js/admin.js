@@ -51,26 +51,76 @@ async function loadAdminCountry(pais) {
   ADMIN_PAIS = pais;
   ADMIN_PASS = storedPass();
   setLoading(true);
+  ADMIN_DATA = null;
   try {
     ADMIN_DATA = await loadCountryData(pais);
+    document.getElementById('adminContent').style.display = 'block';
+    document.getElementById('adminContent').innerHTML = '';
+    document.getElementById('adminContent').appendChild(buildGridWrapEl());
     buildAdminGrid();
   } catch (err) {
-    showToast('Error cargando datos: ' + err.message, 'error');
+    if (err.status === 404 && (pais === 'HN' || pais === 'SV')) {
+      showEmptyState(pais);
+    } else {
+      showToast('Error cargando datos: ' + err.message, 'error');
+    }
   }
   setLoading(false);
 }
 
+function showEmptyState(pais) {
+  var c = document.getElementById('adminContent');
+  c.style.display = 'block';
+  c.innerHTML = '<div style="text-align:center;padding:60px 20px">'
+    + '<p style="font-size:18px;font-weight:800;margin-bottom:8px">Sin datos para ' + pais + '</p>'
+    + '<p style="color:var(--muted);font-size:13px;margin-bottom:24px">Este país no tiene datos en el sistema. Puedes inicializarlo con los datos de referencia.</p>'
+    + '<button class="abtn primary" onclick="triggerInitCountry(\'' + pais + '\')">🚀 Inicializar ' + pais + ' con datos de referencia</button>'
+    + '</div>';
+}
+
+async function triggerInitCountry(pais) {
+  showToast('Inicializando ' + pais + '...');
+  try {
+    await initCountryData(pais, storedPass());
+    showToast(pais + ' inicializado correctamente ✓', 'success');
+    setTimeout(function() { loadAdminCountry(pais); }, 600);
+  } catch (err) {
+    if (err.status === 401) {
+      sessionStorage.removeItem('ferco-admin-pass');
+      document.getElementById('loginOverlay').style.display = 'flex';
+      showToast('Sesión expirada. Ingresa de nuevo.', 'error');
+    } else {
+      showToast('Error al inicializar: ' + err.message, 'error');
+    }
+  }
+}
+
+function buildGridWrapEl() {
+  var frag = document.createDocumentFragment();
+  var wrap = document.createElement('div');
+  wrap.id = 'adminGridWrap';
+  wrap.innerHTML = '<div id="adminGrid"></div>';
+  frag.appendChild(wrap);
+  var hint = document.createElement('p');
+  hint.style.cssText = 'font-size:11px;color:var(--muted);margin-top:10px;padding:0 4px';
+  hint.textContent = '💡 Clic en el encabezado de una columna para enfocarla. Doble clic en el nombre de columna o colaborador para renombrar.';
+  frag.appendChild(hint);
+  return frag;
+}
+
 function setLoading(on) {
-  document.getElementById('adminLoader').style.display  = on ? 'flex' : 'none';
-  document.getElementById('adminContent').style.display = on ? 'none' : 'block';
+  document.getElementById('adminLoader').style.display = on ? 'flex' : 'none';
+  if (on) document.getElementById('adminContent').style.display = 'none';
 }
 
 /* ── Construcción del grid ── */
 function buildAdminGrid() {
+  if (!ADMIN_DATA) return;
   focusedColIdx = null;
   var rows = ADMIN_PROG === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
   var cols = getAdminCols();
   var grid = document.getElementById('adminGrid');
+  if (!grid) return;
   grid.innerHTML = '';
 
   // Columna fija: nombres
@@ -124,10 +174,55 @@ function makeFixedCol(rows) {
   rows.forEach(function(row, ri) {
     var cell = document.createElement('div');
     cell.className = 'col-cell name-cell';
-    cell.innerHTML =
-      '<div><div class="row-name">'+escHtml(row.nombre || '—')+'</div>'
-      +'<div class="row-suc">'+escHtml(row.sucursal || '')+'</div></div>'
-      +'<span class="del-row" title="Eliminar fila" onclick="deleteRow('+ri+')">✕</span>';
+
+    var info = document.createElement('div');
+    info.style.flex = '1';
+    info.style.minWidth = '0';
+
+    var nameDiv = document.createElement('div');
+    nameDiv.className = 'row-name';
+    nameDiv.textContent = row.nombre || '—';
+    nameDiv.title = 'Doble clic para renombrar';
+    nameDiv.addEventListener('dblclick', function() {
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = row.nombre || '';
+      inp.className = 'col-rename-inp';
+      inp.style.width = '100%';
+      var applied = false;
+      function applyRename() {
+        if (applied) return; applied = true;
+        var nv = inp.value.trim();
+        if (nv) {
+          ADMIN_DATA[getProgKey()][ri].nombre = nv;
+          showToast('Colaborador renombrado');
+        }
+        buildAdminGrid();
+      }
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); applyRename(); }
+        if (e.key === 'Escape') { applied = true; buildAdminGrid(); }
+      });
+      inp.addEventListener('blur', applyRename);
+      nameDiv.parentNode.replaceChild(inp, nameDiv);
+      inp.select();
+    });
+
+    var sucDiv = document.createElement('div');
+    sucDiv.className = 'row-suc';
+    sucDiv.textContent = row.sucursal || '';
+
+    info.appendChild(nameDiv);
+    info.appendChild(sucDiv);
+
+    var delBtn = document.createElement('span');
+    delBtn.className = 'del-row';
+    delBtn.title = 'Eliminar fila';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', function() { deleteRow(ri); });
+
+    cell.appendChild(info);
+    cell.appendChild(delBtn);
     group.appendChild(cell);
   });
   return group;
@@ -150,6 +245,29 @@ function makeDataCol(colName, colIdx, rows) {
   var nameSpan = document.createElement('span');
   nameSpan.className = 'col-name-span';
   nameSpan.textContent = colName;
+  nameSpan.title = 'Doble clic para renombrar';
+  nameSpan.addEventListener('dblclick', function(e) {
+    e.stopPropagation();
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = colName;
+    inp.className = 'col-rename-inp';
+    inp.addEventListener('click', function(e) { e.stopPropagation(); });
+    var applied = false;
+    function applyRename() {
+      if (applied) return; applied = true;
+      var nv = inp.value.trim();
+      if (nv && nv !== colName) renameColumn(colName, nv);
+      else buildAdminGrid();
+    }
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); applyRename(); }
+      if (e.key === 'Escape') { applied = true; buildAdminGrid(); }
+    });
+    inp.addEventListener('blur', applyRename);
+    nameSpan.parentNode.replaceChild(inp, nameSpan);
+    inp.select();
+  });
   hdr.appendChild(nameSpan);
 
   // Divisor widget
@@ -231,7 +349,7 @@ function makeNotaCol(rows) {
     inp.value = row.nota || '';
     inp.dataset.row = ri;
     inp.addEventListener('input', function() {
-      ADMIN_DATA[ADMIN_PROG][ri].nota = this.value;
+      ADMIN_DATA[getProgKey()][ri].nota = this.value;
     });
 
     cell.appendChild(inp);
@@ -380,6 +498,33 @@ function deleteColumn(colName) {
 
   buildAdminGrid();
   showToast('Columna eliminada');
+}
+
+function renameColumn(oldName, newName) {
+  var pk = getProgKey();
+  var cfg = ADMIN_DATA.config;
+
+  if (ADMIN_PROG === 'bdo') {
+    cfg.bdoCols.qr    = (cfg.bdoCols.qr    || []).map(function(c){ return c === oldName ? newName : c; });
+    cfg.bdoCols.video = (cfg.bdoCols.video || []).map(function(c){ return c === oldName ? newName : c; });
+  } else {
+    cfg.sesCols = (cfg.sesCols || []).map(function(c){ return c === oldName ? newName : c; });
+  }
+
+  if (cfg.divisors && cfg.divisors[oldName] !== undefined) {
+    cfg.divisors[newName] = cfg.divisors[oldName];
+    delete cfg.divisors[oldName];
+  }
+
+  ADMIN_DATA[pk].forEach(function(row) {
+    if (row.valores && row.valores[oldName] !== undefined) {
+      row.valores[newName] = row.valores[oldName];
+      delete row.valores[oldName];
+    }
+  });
+
+  buildAdminGrid();
+  showToast('Columna renombrada a "' + newName + '"');
 }
 
 /* ── Guardar ── */

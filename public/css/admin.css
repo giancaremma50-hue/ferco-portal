@@ -109,3 +109,6 @@
 
 .focus-hint { font-size: 11px; color: var(--muted); text-align: center; padding: 6px; background: var(--focus-bg); border-radius: 0 0 14px 14px; display: none; }
 .col-group.focused ~ .focus-hint { display: block; }
+
+/* ── Rename inline input ── */
+.col-rename-inp { flex: 1; border: 1px solid var(--focus-border); border-radius: 6px; padding: 2px 6px; font-size: 12px; font-weight: 700; background: var(--focus-bg); color: var(--focus-text); outline: none; min-width: 0; }
