@@ -51,16 +51,16 @@
 .divisor-inp { width: 32px; border: none; font-size: 11px; font-weight: 700; text-align: center; color: var(--text); background: transparent; -moz-appearance: textfield; padding: 0; }
 .divisor-inp::-webkit-inner-spin-button, .divisor-inp::-webkit-outer-spin-button { -webkit-appearance: none; }
 .divisor-inp:focus { outline: none; color: #7c3aed; }
-.col-header .del-col { font-size: 14px; opacity: 0; transition: opacity .15s; cursor: pointer; color: var(--bad); padding: 2px 4px; flex-shrink: 0; }
-.col-group:hover .col-header .del-col { opacity: 0.6; }
+.col-header .del-col { font-size: 14px; opacity: 0.35; transition: opacity .15s; cursor: pointer; color: var(--bad); padding: 2px 4px; flex-shrink: 0; }
+.col-group:hover .col-header .del-col { opacity: 0.7; }
 .col-header .del-col:hover { opacity: 1 !important; }
 
 .col-cell { padding: 6px 8px; border-bottom: 1px solid var(--border); min-height: 46px; display: flex; align-items: center; }
 .col-cell.name-cell { padding: 8px 12px; font-size: 13px; gap: 6px; justify-content: space-between; }
 .col-cell.name-cell .row-name { font-weight: 600; }
 .col-cell.name-cell .row-suc { font-size: 11px; color: var(--muted); }
-.col-cell.name-cell .del-row { font-size: 13px; opacity: 0; cursor: pointer; color: var(--bad); flex-shrink: 0; transition: opacity .15s; }
-.col-group.fixed-col .col-cell:hover .del-row { opacity: 0.6; }
+.col-cell.name-cell .del-row { font-size: 13px; opacity: 0.35; cursor: pointer; color: var(--bad); flex-shrink: 0; transition: opacity .15s; }
+.col-group.fixed-col .col-cell:hover .del-row { opacity: 0.7; }
 .col-cell.name-cell .del-row:hover { opacity: 1 !important; }
 .nota-col { min-width: 160px; }
 

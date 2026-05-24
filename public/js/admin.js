@@ -3,6 +3,7 @@ var ADMIN_DATA   = null;   // blob completo del país actual
 var ADMIN_PAIS   = 'GT';
 var ADMIN_PROG   = 'bdo';  // 'bdo' | '4x4'
 var ADMIN_PASS   = '';
+var ADMIN_SUC    = 'Todas'; // filtro de sucursal en el grid
 var focusedColIdx = null;  // índice de la col enfocada (null = ninguna)
 
 /* ── Helpers de programa/divisores ── */
@@ -113,11 +114,30 @@ function setLoading(on) {
   if (on) document.getElementById('adminContent').style.display = 'none';
 }
 
+/* ── Filtro sucursal admin ── */
+function onAdminSuc(val) {
+  ADMIN_SUC = val;
+  buildAdminGrid();
+}
+
+function updateSucFilter(allRows) {
+  var sel = document.getElementById('adminSucSel');
+  if (!sel) return;
+  var sucs = ['Todas'].concat([...new Set(allRows.map(function(r){ return r.sucursal; }).filter(function(s){ return s && s !== ''; }))].sort());
+  var cur = sel.value || ADMIN_SUC;
+  sel.innerHTML = sucs.map(function(s){ return '<option value="'+s+'"'+(s===cur?' selected':'')+'>'+s+'</option>'; }).join('');
+  if (!sucs.includes(ADMIN_SUC)) ADMIN_SUC = 'Todas';
+}
+
 /* ── Construcción del grid ── */
 function buildAdminGrid() {
   if (!ADMIN_DATA) return;
   focusedColIdx = null;
-  var rows = ADMIN_PROG === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
+  var allRows = ADMIN_PROG === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
+  // Etiquetar cada fila con su índice real en el array de datos
+  allRows.forEach(function(r, i) { r._idx = i; });
+  updateSucFilter(allRows);
+  var rows = ADMIN_SUC === 'Todas' ? allRows : allRows.filter(function(r){ return r.sucursal === ADMIN_SUC; });
   var cols = getAdminCols();
   var grid = document.getElementById('adminGrid');
   if (!grid) return;
@@ -168,10 +188,13 @@ function makeFixedCol(rows) {
 
   var hdr = document.createElement('div');
   hdr.className = 'col-header no-click';
-  hdr.innerHTML = 'Colaborador <span style="font-size:11px;color:var(--muted);font-weight:400">— '+rows.length+' registros</span>';
+  var totalRows = ADMIN_PROG === 'bdo' ? (ADMIN_DATA.bdo || []).length : (ADMIN_DATA.x4x || []).length;
+  var countLabel = rows.length < totalRows ? rows.length + ' de ' + totalRows : rows.length;
+  hdr.innerHTML = 'Colaborador <span style="font-size:11px;color:var(--muted);font-weight:400">— '+countLabel+' registros</span>';
   group.appendChild(hdr);
 
-  rows.forEach(function(row, ri) {
+  rows.forEach(function(row) {
+    var realIdx = row._idx;
     var cell = document.createElement('div');
     cell.className = 'col-cell name-cell';
 
@@ -194,7 +217,7 @@ function makeFixedCol(rows) {
         if (applied) return; applied = true;
         var nv = inp.value.trim();
         if (nv) {
-          ADMIN_DATA[getProgKey()][ri].nombre = nv;
+          ADMIN_DATA[getProgKey()][realIdx].nombre = nv;
           showToast('Colaborador renombrado');
         }
         buildAdminGrid();
@@ -219,7 +242,7 @@ function makeFixedCol(rows) {
     delBtn.className = 'del-row';
     delBtn.title = 'Eliminar fila';
     delBtn.textContent = '✕';
-    delBtn.addEventListener('click', function() { deleteRow(ri); });
+    delBtn.addEventListener('click', function() { deleteRow(realIdx); });
 
     cell.appendChild(info);
     cell.appendChild(delBtn);
@@ -297,7 +320,8 @@ function makeDataCol(colName, colIdx, rows) {
   hdr.addEventListener('click', function() { focusCol(colIdx); });
   group.appendChild(hdr);
 
-  rows.forEach(function(row, ri) {
+  rows.forEach(function(row) {
+    var realIdx = row._idx;
     var pct = parseFloat((row.valores && row.valores[colName]) || 0);
     var displayVal = divisor !== 100 ? Math.round(pct * divisor / 100) : pct;
 
@@ -309,14 +333,13 @@ function makeDataCol(colName, colIdx, rows) {
     inp.min = 0;
     inp.max = divisor;
     inp.value = displayVal;
-    inp.dataset.row = ri;
     inp.dataset.col = colName;
 
     inp.addEventListener('input', function() {
       var raw = Math.min(divisor, Math.max(0, parseFloat(this.value) || 0));
       var pctVal = divisor > 0 ? Math.min(100, Math.round(raw / divisor * 100)) : raw;
-      if (!ADMIN_DATA[pk][ri].valores) ADMIN_DATA[pk][ri].valores = {};
-      ADMIN_DATA[pk][ri].valores[colName] = pctVal;
+      if (!ADMIN_DATA[pk][realIdx].valores) ADMIN_DATA[pk][realIdx].valores = {};
+      ADMIN_DATA[pk][realIdx].valores[colName] = pctVal;
       cell.className = 'col-cell ' + cellBg(pctVal);
     });
     inp.addEventListener('change', function() {
@@ -338,18 +361,19 @@ function makeNotaCol(rows) {
   hdr.textContent = '📝 Nota';
   group.appendChild(hdr);
 
-  rows.forEach(function(row, ri) {
+  rows.forEach(function(row) {
+    var realIdx = row._idx;
     var cell = document.createElement('div');
     cell.className = 'col-cell';
 
     var inp = document.createElement('input');
     inp.type = 'text';
     inp.className = 'nota-input';
-    inp.placeholder = 'Agregar nota...';
+    inp.placeholder = 'Nota...';
+    inp.maxLength = 10;
     inp.value = row.nota || '';
-    inp.dataset.row = ri;
     inp.addEventListener('input', function() {
-      ADMIN_DATA[getProgKey()][ri].nota = this.value;
+      ADMIN_DATA[getProgKey()][realIdx].nota = this.value;
     });
 
     cell.appendChild(inp);
@@ -416,25 +440,80 @@ function updateFocusHint() {
 
 /* ── CRUD ── */
 function addRow() {
+  var allRows = ADMIN_PROG === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
+  var configSucs = ((ADMIN_DATA.config && ADMIN_DATA.config.sucursales) || []).map(function(s){ return s.nombre; });
+  var rowSucs = [...new Set(allRows.map(function(r){ return r.sucursal; }).filter(Boolean))];
+  var allSucs = [...new Set([].concat(configSucs, rowSucs))].sort();
+
   openModal('Agregar colaborador', [
     { id: 'newNombre', label: 'Nombre completo', type: 'text', placeholder: 'Ej: Juan Pérez' },
-    { id: 'newSucursal', label: 'Sucursal', type: 'text', placeholder: 'Ej: Tegucigalpa Centro' },
   ], function(vals) {
+    var sucSel = document.getElementById('addRowSucSel');
+    var suc = sucSel ? sucSel.value.trim() : '';
     if (!vals.newNombre.trim()) { showToast('El nombre es requerido', 'error'); return false; }
+    var region = '', zona = '';
+    if (ADMIN_PAIS === 'GT' && suc) {
+      var sc = ((ADMIN_DATA.config && ADMIN_DATA.config.sucursales) || []).find(function(s){ return s.nombre === suc; });
+      if (sc) { region = sc.region || ''; zona = sc.zona || ''; }
+    }
     var cols = getAdminCols();
     var valores = {};
     cols.forEach(function(c){ valores[c] = 0; });
-    var newRow = {
-      canal: '', region: '', zona: '',
-      sucursal: vals.newSucursal.trim(),
-      nombre: vals.newNombre.trim(),
-      valores: valores,
-      nota: '',
-    };
-    ADMIN_DATA[getProgKey()].push(newRow);
+    ADMIN_DATA[getProgKey()].push({ canal: '', region: region, zona: zona, sucursal: suc, nombre: vals.newNombre.trim(), valores: valores, nota: '' });
     buildAdminGrid();
     showToast('Colaborador agregado');
     return true;
+  });
+
+  // Inject sucursal select + "Agregar nueva sucursal" button into the modal
+  var fieldsDiv = document.querySelector('#modalBox .modal-fields');
+  var opts = allSucs.map(function(s){ return '<option value="'+escHtml(s)+'">'+escHtml(s)+'</option>'; }).join('');
+  fieldsDiv.insertAdjacentHTML('beforeend',
+    '<label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;margin-top:8px">Sucursal</label>'
+    + '<select id="addRowSucSel" style="width:100%">'
+    + (opts || '<option value="">— sin sucursal —</option>')
+    + '</select>'
+    + '<button type="button" onclick="openAddSucModal()" style="margin-top:6px;font-size:11px;background:none;border:none;color:inherit;cursor:pointer;padding:2px 0;text-decoration:underline;display:block;opacity:.7">+ Agregar nueva sucursal</button>'
+  );
+}
+
+function openAddSucModal() {
+  var savedNombre = '';
+  var nombreEl = document.getElementById('mf_newNombre');
+  if (nombreEl) savedNombre = nombreEl.value;
+
+  var allRows = ADMIN_DATA[getProgKey()] || [];
+  var fields = [
+    { id: 'newSucNombre', label: 'Nombre de la sucursal', type: 'text', placeholder: 'Ej: Tegucigalpa Norte' },
+  ];
+
+  if (ADMIN_PAIS === 'GT') {
+    var regiones = [...new Set(allRows.map(function(r){ return r.region; }).filter(Boolean))].sort();
+    var zonas    = [...new Set(allRows.map(function(r){ return r.zona; }).filter(Boolean))].sort();
+    fields.push({
+      id: 'newSucRegion', label: 'Región', type: 'select',
+      options: [{ v: '', l: '— elegir región —' }].concat(regiones.map(function(r){ return { v: r, l: r }; }))
+    });
+    fields.push({
+      id: 'newSucZona', label: 'Zona', type: 'select',
+      options: [{ v: '', l: '— elegir zona —' }].concat(zonas.map(function(z){ return { v: z, l: z }; }))
+    });
+  }
+
+  openModal('Agregar nueva sucursal', fields, function(vals) {
+    var nombre = vals.newSucNombre ? vals.newSucNombre.trim() : '';
+    if (!nombre) { showToast('El nombre es requerido', 'error'); return false; }
+    if (!ADMIN_DATA.config.sucursales) ADMIN_DATA.config.sucursales = [];
+    ADMIN_DATA.config.sucursales.push({ nombre: nombre, region: vals.newSucRegion || '', zona: vals.newSucZona || '' });
+    closeModal();
+    addRow();
+    setTimeout(function() {
+      var ni = document.getElementById('mf_newNombre');
+      if (ni) ni.value = savedNombre;
+      var sel = document.getElementById('addRowSucSel');
+      if (sel) sel.value = nombre;
+    }, 50);
+    return false;
   });
 }
 
@@ -554,12 +633,14 @@ async function saveData() {
 /* ── Selector de país/programa ── */
 function onAdminPais(pais) {
   ADMIN_PAIS = pais;
+  ADMIN_SUC = 'Todas';
   focusedColIdx = null;
   loadAdminCountry(pais);
 }
 
 function onAdminProg(prog) {
   ADMIN_PROG = prog;
+  ADMIN_SUC = 'Todas';
   focusedColIdx = null;
   if (ADMIN_DATA) buildAdminGrid();
 }
