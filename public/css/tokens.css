@@ -1,15 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap');
+
 :root {
-  --text: #0f172a;
-  --muted: #64748b;
-  --border: #e2e8f0;
-  --soft: #f8fafc;
-  --good: #166534;
-  --goodbg: #dcfce7;
-  --mid: #92400e;
-  --midbg: #fef3c7;
-  --bad: #991b1b;
-  --badbg: #fee2e2;
-  --focus-bg: #ede9fe;
-  --focus-border: #7c3aed;
-  --focus-text: #5b21b6;
+  /* === Marca principal === */
+  --primary:       #f59e0b;
+  --primary-dark:  #d97706;
+  --primary-light: #fffbeb;
+  --primary-fg:    #000000;
+
+  /* === Layout === */
+  --background: #f3f4f6;
+  --card:       #ffffff;
+  --foreground: #262626;
+  --border:     #e5e7eb;
+  --soft:       #f9fafb;
+  --secondary:  #f3f4f6;
+
+  /* === Tipografía === */
+  --muted:    #f9fafb;
+  --muted-fg: #6b7280;
+
+  /* === Semánticos === */
+  --good:   #166534; --goodbg: #dcfce7;
+  --mid:    #92400e; --midbg:  #fffbeb;
+  --bad:    #991b1b; --badbg:  #fee2e2;
+
+  /* === Focus (usa el ámbar de la marca) === */
+  --focus-bg:     #fffbeb;
+  --focus-border: #f59e0b;
+  --focus-text:   #92400e;
+
+  /* === Fuentes === */
+  --font-sans:  'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+
+  /* === Sombras === */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.05);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+  --shadow-lg: 0 8px 28px rgba(0,0,0,.10), 0 4px 8px rgba(0,0,0,.06);
+
+  /* === Alias de compatibilidad === */
+  --text: var(--foreground);
 }

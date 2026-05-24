@@ -20,20 +20,45 @@ function sc(v)   { if(v>=80) return 'good'; if(v>=61) return 'mid'; if(v>0) retu
 function svc(v)  { if(v>=80) return 'cg'; if(v>=61) return 'cm'; if(v>0) return 'cb'; return 'c0'; }
 function ssv(v)  { if(v>=80) return 'sg'; if(v>=61) return 'sm'; if(v>0) return 'sb'; return 's0'; }
 
-/* ── Sparkline SVG ── */
+/* ── Sparkline SVG con gradiente de área ── */
 function makeSpark(vals, colorCls) {
   if (!vals || !vals.length) return '';
-  var W=200,H=44,PX=8,PY=6;
+  var W=200, H=56, PX=8, PY=10;
   var minV=Math.min.apply(null,vals), maxV=Math.max.apply(null,vals);
   if(minV===maxV){minV=Math.max(0,minV-15);maxV=Math.min(100,maxV+15);}
   var rng=maxV-minV, n=vals.length;
-  function cx(i){return PX+(n>1?(i/(n-1))*(W-2*PX):W/2);}
-  function cy(v){return H-PY-((v-minV)/rng)*(H-2*PY);}
   var stroke=colorCls==='cg'?'#16a34a':colorCls==='cm'?'#d97706':colorCls==='cb'?'#dc2626':'#94a3b8';
-  var d=vals.map(function(v,i){return(i===0?'M':'L')+cx(i).toFixed(1)+','+cy(v).toFixed(1);}).join(' ');
-  var dots=vals.map(function(v,i){var l=i===n-1;return'<circle cx="'+cx(i).toFixed(1)+'" cy="'+cy(v).toFixed(1)+'" r="'+(l?3.5:2)+'" fill="'+stroke+'" opacity="'+(l?1:.5)+'"/>';}).join('');
+  var pts=vals.map(function(v,i){
+    return {x:PX+(n>1?(i/(n-1))*(W-2*PX):W/2), y:H-PY-((v-minV)/rng)*(H-2*PY)};
+  });
+  /* Curva natural (cardinal spline con bezier cúbico) */
+  var lp;
+  if(n===1){ lp='M'+pts[0].x.toFixed(1)+','+pts[0].y.toFixed(1); }
+  else if(n===2){ lp='M'+pts[0].x.toFixed(1)+','+pts[0].y.toFixed(1)+' L'+pts[1].x.toFixed(1)+','+pts[1].y.toFixed(1); }
+  else {
+    lp='M'+pts[0].x.toFixed(1)+','+pts[0].y.toFixed(1);
+    for(var i=0;i<n-1;i++){
+      var x0=i>0?pts[i-1].x:pts[i].x, y0=i>0?pts[i-1].y:pts[i].y;
+      var x1=pts[i].x, y1=pts[i].y, x2=pts[i+1].x, y2=pts[i+1].y;
+      var x3=i<n-2?pts[i+2].x:x2, y3=i<n-2?pts[i+2].y:y2;
+      var cp1x=x1+(x2-x0)/5, cp1y=y1+(y2-y0)/5;
+      var cp2x=x2-(x3-x1)/5, cp2y=y2-(y3-y1)/5;
+      lp+=' C'+cp1x.toFixed(1)+','+cp1y.toFixed(1)+' '+cp2x.toFixed(1)+','+cp2y.toFixed(1)+' '+x2.toFixed(1)+','+y2.toFixed(1);
+    }
+  }
+  var ap=lp+' L'+pts[n-1].x.toFixed(1)+','+(H-PY)+' L'+pts[0].x.toFixed(1)+','+(H-PY)+' Z';
+  var gid='sg'+Math.floor(Math.random()*1e7);
+  var dots=pts.map(function(p,i){
+    var l=i===n-1;
+    return '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+(l?3:1.5)+'" fill="'+stroke+'" opacity="'+(l?1:0.4)+'"/>';
+  }).join('');
   return '<svg class="hist-spark" width="100%" height="'+H+'" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'
-    +'<path d="'+d+'" fill="none" stroke="'+stroke+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+    +'<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1">'
+    +'<stop offset="5%" stop-color="'+stroke+'" stop-opacity="0.35"/>'
+    +'<stop offset="95%" stop-color="'+stroke+'" stop-opacity="0.03"/>'
+    +'</linearGradient></defs>'
+    +'<path d="'+ap+'" fill="url(#'+gid+')"/>'
+    +'<path d="'+lp+'" fill="none" stroke="'+stroke+'" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>'
     +dots+'</svg>';
 }
 
