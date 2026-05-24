@@ -6,6 +6,23 @@ var ADMIN_PASS   = '';
 var ADMIN_SUC    = 'Todas'; // filtro de sucursal en el grid
 var focusedColIdx = null;  // índice de la col enfocada (null = ninguna)
 
+/* Configuración de columnas correcta por país (para reparar config vacío) */
+var CORRECT_CONFIG = {
+  HN: {
+    bdoCols: {
+      qr:    ['QR Griferia','QR Losa','QR SPC','QR Cerámica'],
+      video: ['Video Griferia','Video de Losa','Video de SPC','Video Cerámica'],
+    },
+    sesCols:  ['Sesión 1','Sesión 2','Sesión 3'],
+    divisors: {'QR Griferia':5,'QR Losa':5,'QR SPC':4,'QR Cerámica':5,'Sesión 1':7,'Sesión 2':7,'Sesión 3':7},
+  },
+  SV: {
+    bdoCols: { qr: [], video: [] },
+    sesCols:  ['Sesión 1','Sesión 2','Sesión 3'],
+    divisors: {'Sesión 1':7,'Sesión 2':7,'Sesión 3':7},
+  },
+};
+
 /* ── Helpers de programa/divisores ── */
 function getProgKey() { return ADMIN_PROG === 'bdo' ? 'bdo' : 'x4x'; }
 function getDivisor(colName) {
@@ -143,6 +160,18 @@ function buildAdminGrid() {
   if (!grid) return;
   grid.innerHTML = '';
 
+  // Banner de reparación cuando faltan columnas en HN/SV
+  var repairBanner = document.getElementById('repairBanner');
+  if (repairBanner) repairBanner.remove();
+  if (cols.length === 0 && CORRECT_CONFIG[ADMIN_PAIS]) {
+    var banner = document.createElement('div');
+    banner.id = 'repairBanner';
+    banner.style.cssText = 'background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;font-size:13px;color:#92400e';
+    banner.innerHTML = '<span>⚠️ Las columnas de <strong>' + ADMIN_PAIS + '</strong> no están configuradas en este sistema.</span>'
+      + '<button class="abtn" onclick="repairConfig()" style="background:#d97706;color:#fff;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">Restaurar columnas</button>';
+    grid.before(banner);
+  }
+
   // Columna fija: nombres
   var fixedGroup = makeFixedCol(rows);
   grid.appendChild(fixedGroup);
@@ -165,6 +194,18 @@ function getAdminCols() {
     return qr.concat(vid);
   }
   return ADMIN_DATA.config.sesCols || [];
+}
+
+function repairConfig() {
+  var cc = CORRECT_CONFIG[ADMIN_PAIS];
+  if (!cc) return;
+  ADMIN_DATA.config = Object.assign({}, ADMIN_DATA.config, {
+    bdoCols:  cc.bdoCols,
+    sesCols:  cc.sesCols,
+    divisors: Object.assign({}, ADMIN_DATA.config.divisors || {}, cc.divisors),
+  });
+  buildAdminGrid();
+  showToast('Columnas restauradas — presiona Guardar y publicar para aplicar.', 'success');
 }
 
 function colTag(colName) {
