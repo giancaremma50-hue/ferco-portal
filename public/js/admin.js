@@ -441,32 +441,79 @@ function updateFocusHint() {
 /* ── CRUD ── */
 function addRow() {
   var allRows = ADMIN_PROG === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
-  var sucOpts = [...new Set(allRows.map(function(r){ return r.sucursal; }).filter(function(s){ return s && s !== ''; }))].sort();
-  var sucField = sucOpts.length
-    ? { id: 'newSucursal', label: 'Sucursal', type: 'select', options: sucOpts.map(function(s){ return { v: s, l: s }; }).concat([{ v: '__nueva__', l: '+ Nueva sucursal...' }]) }
-    : { id: 'newSucursal', label: 'Sucursal', type: 'text', placeholder: 'Ej: Tegucigalpa Centro' };
+  var configSucs = ((ADMIN_DATA.config && ADMIN_DATA.config.sucursales) || []).map(function(s){ return s.nombre; });
+  var rowSucs = [...new Set(allRows.map(function(r){ return r.sucursal; }).filter(Boolean))];
+  var allSucs = [...new Set([].concat(configSucs, rowSucs))].sort();
 
   openModal('Agregar colaborador', [
     { id: 'newNombre', label: 'Nombre completo', type: 'text', placeholder: 'Ej: Juan Pérez' },
-    sucField,
-    { id: 'newSucursalNueva', label: 'Nombre de nueva sucursal (si seleccionaste "+ Nueva")', type: 'text', placeholder: 'Ej: Choluteca Norte' },
   ], function(vals) {
-    var suc = vals.newSucursal === '__nueva__' ? vals.newSucursalNueva.trim() : vals.newSucursal.trim();
+    var sucSel = document.getElementById('addRowSucSel');
+    var suc = sucSel ? sucSel.value.trim() : '';
     if (!vals.newNombre.trim()) { showToast('El nombre es requerido', 'error'); return false; }
+    var region = '', zona = '';
+    if (ADMIN_PAIS === 'GT' && suc) {
+      var sc = ((ADMIN_DATA.config && ADMIN_DATA.config.sucursales) || []).find(function(s){ return s.nombre === suc; });
+      if (sc) { region = sc.region || ''; zona = sc.zona || ''; }
+    }
     var cols = getAdminCols();
     var valores = {};
     cols.forEach(function(c){ valores[c] = 0; });
-    var newRow = {
-      canal: '', region: '', zona: '',
-      sucursal: suc,
-      nombre: vals.newNombre.trim(),
-      valores: valores,
-      nota: '',
-    };
-    ADMIN_DATA[getProgKey()].push(newRow);
+    ADMIN_DATA[getProgKey()].push({ canal: '', region: region, zona: zona, sucursal: suc, nombre: vals.newNombre.trim(), valores: valores, nota: '' });
     buildAdminGrid();
     showToast('Colaborador agregado');
     return true;
+  });
+
+  // Inject sucursal select + "Agregar nueva sucursal" button into the modal
+  var fieldsDiv = document.querySelector('#modalBox .modal-fields');
+  var opts = allSucs.map(function(s){ return '<option value="'+escHtml(s)+'">'+escHtml(s)+'</option>'; }).join('');
+  fieldsDiv.insertAdjacentHTML('beforeend',
+    '<label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;margin-top:8px">Sucursal</label>'
+    + '<select id="addRowSucSel" style="width:100%">'
+    + (opts || '<option value="">— sin sucursal —</option>')
+    + '</select>'
+    + '<button type="button" onclick="openAddSucModal()" style="margin-top:6px;font-size:11px;background:none;border:none;color:inherit;cursor:pointer;padding:2px 0;text-decoration:underline;display:block;opacity:.7">+ Agregar nueva sucursal</button>'
+  );
+}
+
+function openAddSucModal() {
+  var savedNombre = '';
+  var nombreEl = document.getElementById('mf_newNombre');
+  if (nombreEl) savedNombre = nombreEl.value;
+
+  var allRows = ADMIN_DATA[getProgKey()] || [];
+  var fields = [
+    { id: 'newSucNombre', label: 'Nombre de la sucursal', type: 'text', placeholder: 'Ej: Tegucigalpa Norte' },
+  ];
+
+  if (ADMIN_PAIS === 'GT') {
+    var regiones = [...new Set(allRows.map(function(r){ return r.region; }).filter(Boolean))].sort();
+    var zonas    = [...new Set(allRows.map(function(r){ return r.zona; }).filter(Boolean))].sort();
+    fields.push({
+      id: 'newSucRegion', label: 'Región', type: 'select',
+      options: [{ v: '', l: '— elegir región —' }].concat(regiones.map(function(r){ return { v: r, l: r }; }))
+    });
+    fields.push({
+      id: 'newSucZona', label: 'Zona', type: 'select',
+      options: [{ v: '', l: '— elegir zona —' }].concat(zonas.map(function(z){ return { v: z, l: z }; }))
+    });
+  }
+
+  openModal('Agregar nueva sucursal', fields, function(vals) {
+    var nombre = vals.newSucNombre ? vals.newSucNombre.trim() : '';
+    if (!nombre) { showToast('El nombre es requerido', 'error'); return false; }
+    if (!ADMIN_DATA.config.sucursales) ADMIN_DATA.config.sucursales = [];
+    ADMIN_DATA.config.sucursales.push({ nombre: nombre, region: vals.newSucRegion || '', zona: vals.newSucZona || '' });
+    closeModal();
+    addRow();
+    setTimeout(function() {
+      var ni = document.getElementById('mf_newNombre');
+      if (ni) ni.value = savedNombre;
+      var sel = document.getElementById('addRowSucSel');
+      if (sel) sel.value = nombre;
+    }, 50);
+    return false;
   });
 }
 

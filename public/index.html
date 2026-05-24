@@ -134,7 +134,7 @@ async function selectCountry(pais) {
     sel.classList.add('compact');
     ['GT','HN','SV'].forEach(function(c) {
       document.getElementById('btn'+c).innerHTML =
-        '<span class="flag">'+COUNTRY_FLAGS[c]+'</span> '+c;
+        '<span class="flag">'+COUNTRY_FLAGS[c]+'</span>';
     });
     hc.insertBefore(sel, hc.firstChild);
   }
