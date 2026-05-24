@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/css/tokens.css">
 <link rel="stylesheet" href="/css/admin.css">
 </head>
-<body style="background:#f1f5f9;min-height:100vh;font-family:Arial,sans-serif;font-size:14px">
+<body style="background:var(--background);min-height:100vh;font-family:var(--font-sans);font-size:14px">
 
 <!-- Login overlay -->
 <div id="loginOverlay">
@@ -23,8 +23,11 @@
 
 <!-- Header -->
 <div class="admin-header">
-  <div style="display:flex;align-items:center;gap:12px">
-    <h1>Ferco Cerámica</h1>
+  <div style="display:flex;align-items:center;gap:16px">
+    <div class="ferco-logo ferco-logo-white">
+      <span class="logo-mark">FERCO</span>
+      <span class="logo-sub">Cerámica</span>
+    </div>
     <span class="badge-admin">Admin</span>
   </div>
   <a href="/" style="color:#94a3b8;font-size:13px;text-decoration:none">← Ver portal público</a>
