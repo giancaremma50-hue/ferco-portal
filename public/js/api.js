@@ -1,6 +1,11 @@
 async function loadCountryData(pais) {
   const res = await fetch(`/api/data-get?pais=${pais}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err = new Error(body.error || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
