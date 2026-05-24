@@ -702,6 +702,12 @@ function openModal(title, fields, onConfirm) {
   var box = document.getElementById('modalBox');
   box.querySelector('h3').textContent = title;
   box.querySelector('p').textContent = '';
+  // Restaurar botones por si venimos del modal de ranking
+  var cfmBtn = box.querySelector('.modal-confirm');
+  cfmBtn.style.display = '';
+  cfmBtn.textContent = 'Confirmar';
+  var cncBtn = box.querySelector('.modal-actions button:first-child');
+  cncBtn.textContent = 'Cancelar';
 
   var fieldsHtml = fields.map(function(f) {
     if (f.type === 'select') {
@@ -740,4 +746,151 @@ function closeModal() {
 /* ── Helpers ── */
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── Ranking de sucursales ── */
+async function generarRanking() {
+  showToast('Cargando datos de los 3 países...');
+  var gtData, hnData, svData;
+  try {
+    var results = await Promise.all([
+      loadCountryData('GT'),
+      loadCountryData('HN'),
+      loadCountryData('SV'),
+    ]);
+    gtData = results[0]; hnData = results[1]; svData = results[2];
+  } catch (err) {
+    showToast('Error cargando datos: ' + err.message, 'error');
+    return;
+  }
+
+  var rankings = {
+    bdoGT: calcRankingSuc(gtData.bdo  || [], gtData.config  || {}, 'bdo'),
+    bdoHN: calcRankingSuc(hnData.bdo  || [], hnData.config  || {}, 'bdo'),
+    d4xGT: calcRankingSuc(gtData.x4x  || [], gtData.config  || {}, 'd4x4'),
+    d4xHN: calcRankingSuc(hnData.x4x  || [], hnData.config  || {}, 'd4x4'),
+    d4xSV: calcRankingSuc(svData.x4x  || [], svData.config  || {}, 'd4x4'),
+  };
+
+  showRankingModal(buildRankingText(rankings));
+}
+
+function calcRankingSuc(rows, config, prog) {
+  var grouped = {};
+  rows.forEach(function(r) {
+    if (!r.sucursal) return;
+    if (!grouped[r.sucursal]) grouped[r.sucursal] = [];
+    grouped[r.sucursal].push(r);
+  });
+
+  var results = [];
+  Object.keys(grouped).forEach(function(suc) {
+    var gr = grouped[suc];
+    var personScores;
+
+    if (prog === 'bdo') {
+      var qrCols  = (config.bdoCols && config.bdoCols.qr)    || [];
+      var vidCols = (config.bdoCols && config.bdoCols.video) || [];
+      if (!qrCols.length && !vidCols.length) return;
+      personScores = gr.map(function(r) {
+        var qrV  = qrCols.map(function(c)  { return parseFloat((r.valores && r.valores[c]) || 0); });
+        var vidV = vidCols.map(function(c) { return parseFloat((r.valores && r.valores[c]) || 0); });
+        var aQR  = qrV.length  ? qrV.reduce(function(a,b){return a+b;},0)  / qrV.length  : 0;
+        var aVid = vidV.length ? vidV.reduce(function(a,b){return a+b;},0) / vidV.length : 0;
+        return (aQR + aVid) / 2;
+      });
+    } else {
+      var sesCols = config.sesCols || [];
+      if (!sesCols.length) return;
+      personScores = gr.map(function(r) {
+        var vals = sesCols.map(function(c){ return parseFloat((r.valores && r.valores[c]) || 0); });
+        return vals.reduce(function(a,b){return a+b;},0) / vals.length;
+      });
+    }
+
+    if (!personScores.length) return;
+    var score = Math.round(personScores.reduce(function(a,b){return a+b;},0) / personScores.length * 10) / 10;
+    results.push({ sucursal: suc, score: score });
+  });
+
+  return results.sort(function(a, b) {
+    return b.score - a.score || a.sucursal.localeCompare(b.sucursal, 'es');
+  });
+}
+
+function buildRankingText(r) {
+  var SEP = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+  var MEDALS = ['1°🥇 ','2°🥈 ','3°🥉 '];
+
+  function top3Block(ranking) {
+    if (!ranking.length) return '    (sin datos)';
+    return ranking.slice(0,3).map(function(s,i){
+      return MEDALS[i] + s.sucursal + ' ' + s.score.toFixed(1) + '%';
+    }).join('\n');
+  }
+
+  function criticasBlock(ranking) {
+    var rojas  = ranking.filter(function(s){ return s.score <  50; });
+    var riesgo = ranking.filter(function(s){ return s.score >= 50 && s.score < 80; });
+    if (!rojas.length && !riesgo.length) return '    ✅ Todas sobre el 80%';
+    var lines = [];
+    if (rojas.length)  lines.push('    🔴 Críticas: '  + rojas.map( function(s){ return s.sucursal+' '+s.score.toFixed(1)+'%'; }).join(', '));
+    if (riesgo.length) lines.push('    🟡 En riesgo: ' + riesgo.map(function(s){ return s.sucursal+' '+s.score.toFixed(1)+'%'; }).join(', '));
+    return lines.join('\n');
+  }
+
+  var lines = [
+    '📊 BATEADOR DE OBJECIONES',
+    '🏆 TOP 3 POR PAÍS',
+    'Guatemala',
+    top3Block(r.bdoGT),
+    'Honduras',
+    top3Block(r.bdoHN),
+    SEP,
+    '⚠️ SUCURSALES CRÍTICAS (bajo 80%)',
+    'Guatemala',
+    criticasBlock(r.bdoGT),
+    'Honduras',
+    criticasBlock(r.bdoHN),
+    '',
+    '📊 DESPLIEGUE 4x4',
+    '🏆 TOP 3 POR PAÍS',
+    'Guatemala',
+    top3Block(r.d4xGT),
+    'El Salvador',
+    top3Block(r.d4xSV),
+    'Honduras',
+    top3Block(r.d4xHN),
+    SEP,
+    '⚠️ SUCURSALES CRÍTICAS (bajo 80%)',
+    'Guatemala',
+    criticasBlock(r.d4xGT),
+    'El Salvador',
+    criticasBlock(r.d4xSV),
+    'Honduras',
+    criticasBlock(r.d4xHN),
+  ];
+  return lines.join('\n');
+}
+
+function showRankingModal(text) {
+  var overlay = document.getElementById('modalOverlay');
+  var box = document.getElementById('modalBox');
+  box.querySelector('h3').textContent = '📊 Ranking de Sucursales';
+  box.querySelector('p').textContent = 'Copia el texto y pégalo directamente en Outlook.';
+  box.querySelector('.modal-fields').innerHTML =
+    '<textarea id="rankingTa" style="width:100%;height:300px;font-family:monospace;font-size:11px;line-height:1.6;border:1px solid var(--border);border-radius:6px;padding:10px;resize:vertical" readonly>' + escHtml(text) + '</textarea>'
+    + '<button onclick="copyRanking()" style="margin-top:8px;width:100%;background:#1e3a5f;color:#fff;border:none;padding:9px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px">📋 Copiar al portapapeles</button>';
+  // Ocultar "Confirmar", cambiar "Cancelar" a "Cerrar"
+  box.querySelector('.modal-confirm').style.display = 'none';
+  box.querySelector('.modal-actions button:first-child').textContent = 'Cerrar';
+  overlay.classList.add('open');
+}
+
+function copyRanking() {
+  var ta = document.getElementById('rankingTa');
+  if (!ta) return;
+  ta.select();
+  try { document.execCommand('copy'); } catch(e) {}
+  showToast('¡Copiado al portapapeles!', 'success');
 }
