@@ -404,8 +404,13 @@ function getSucsF() {
 }
 
 function renderHistorico() {
-  var cortes=(DATA.historico&&DATA.historico.cortes)||[];
-  if(!cortes.length){document.getElementById('tab_historico').innerHTML='<p style="color:var(--muted);padding:16px">Sin histórico.</p>';return;}
+  var allCortes=(DATA.historico&&DATA.historico.cortes)||[];
+  if(!allCortes.length){document.getElementById('tab_historico').innerHTML='<p style="color:var(--muted);padding:16px">Sin histórico.</p>';return;}
+  /* Filtrar por meses seleccionados */
+  var cortes = (selMeses && selMeses.length)
+    ? allCortes.filter(function(c){ return selMeses.indexOf(c.mesKey) >= 0; })
+    : allCortes;
+  if(!cortes.length){document.getElementById('tab_historico').innerHTML='<p style="color:var(--muted-fg);padding:16px">Sin datos para los meses seleccionados.</p>';return;}
   var isBdo=state.prog==='bdo';
 
   /* Sucursales activas (con histórico) */
