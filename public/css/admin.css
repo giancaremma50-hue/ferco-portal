@@ -62,10 +62,10 @@
 .col-group:hover .col-header .del-col { opacity: 0.7; }
 .col-header .del-col:hover { opacity: 1 !important; }
 
-.col-cell { padding: 6px 8px; border-bottom: 1px solid var(--border); min-height: 46px; display: flex; align-items: center; }
+.col-cell { box-sizing: border-box; padding: 6px 8px; border-bottom: 1px solid var(--border); height: 60px; display: flex; align-items: center; overflow: hidden; }
 .col-cell.name-cell { padding: 8px 12px; font-size: 13px; gap: 6px; justify-content: space-between; }
-.col-cell.name-cell .row-name { font-weight: 600; }
-.col-cell.name-cell .row-suc { font-size: 11px; color: var(--muted); }
+.col-cell.name-cell .row-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-cell.name-cell .row-suc { font-size: 11px; color: var(--muted-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-cell.name-cell .del-row { font-size: 13px; opacity: 0.35; cursor: pointer; color: var(--bad); flex-shrink: 0; transition: opacity .15s; }
 .col-group.fixed-col .col-cell:hover .del-row { opacity: 0.7; }
 .col-cell.name-cell .del-row:hover { opacity: 1 !important; }

@@ -246,7 +246,7 @@ function makeFixedCol(rows) {
     var nameDiv = document.createElement('div');
     nameDiv.className = 'row-name';
     nameDiv.textContent = row.nombre || '—';
-    nameDiv.title = 'Doble clic para renombrar';
+    nameDiv.title = row.nombre || '—';
     nameDiv.addEventListener('dblclick', function() {
       var inp = document.createElement('input');
       inp.type = 'text';
