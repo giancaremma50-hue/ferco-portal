@@ -5,9 +5,18 @@ var ADMIN_PROG   = 'bdo';  // 'bdo' | '4x4'
 var ADMIN_PASS   = '';
 var ADMIN_SUC    = 'Todas'; // filtro de sucursal en el grid
 var focusedColIdx = null;  // índice de la col enfocada (null = ninguna)
+var _addSucReturn = null;  // función a reabrir tras crear una sucursal (addRow o editRow)
 
 /* Configuración de columnas correcta por país (para reparar config vacío) */
 var CORRECT_CONFIG = {
+  GT: {
+    bdoCols: {
+      qr:    ['QR Griferia','QR Losa','QR SPC','QR Cerámica'],
+      video: ['Video Griferia','Video de Losa','Video de SPC','Video Cerámica'],
+    },
+    sesCols:  ['Sesión 1','Sesión 2','Sesión 3'],
+    divisors: {'QR Griferia':5,'QR Losa':5,'QR SPC':4,'QR Cerámica':5,'Sesión 1':7,'Sesión 2':7,'Sesión 3':7},
+  },
   HN: {
     bdoCols: {
       qr:    ['QR Griferia','QR Losa','QR SPC','QR Cerámica'],
@@ -115,13 +124,19 @@ async function triggerInitCountry(pais) {
 
 function buildGridWrapEl() {
   var frag = document.createDocumentFragment();
+  // Índice por tienda (se rellena en buildSucIndex)
+  var idx = document.createElement('div');
+  idx.id = 'sucIndex';
+  idx.className = 'suc-index';
+  idx.style.display = 'none';
+  frag.appendChild(idx);
   var wrap = document.createElement('div');
   wrap.id = 'adminGridWrap';
   wrap.innerHTML = '<div id="adminGrid"></div>';
   frag.appendChild(wrap);
   var hint = document.createElement('p');
   hint.style.cssText = 'font-size:11px;color:var(--muted);margin-top:10px;padding:0 4px';
-  hint.textContent = '💡 Clic en el encabezado de una columna para enfocarla. Doble clic en el nombre de columna o colaborador para renombrar.';
+  hint.textContent = '💡 Clic en una tienda del índice para filtrarla. Usa ✏️ para editar el nombre y la sucursal de un colaborador. Doble clic en el nombre de columna para renombrarla.';
   frag.appendChild(hint);
   return frag;
 }
@@ -140,35 +155,99 @@ function onAdminSuc(val) {
 function updateSucFilter(allRows) {
   var sel = document.getElementById('adminSucSel');
   if (!sel) return;
-  var sucs = ['Todas'].concat([...new Set(allRows.map(function(r){ return r.sucursal; }).filter(function(s){ return s && s !== ''; }))].sort());
-  var cur = sel.value || ADMIN_SUC;
-  sel.innerHTML = sucs.map(function(s){ return '<option value="'+s+'"'+(s===cur?' selected':'')+'>'+s+'</option>'; }).join('');
-  if (!sucs.includes(ADMIN_SUC)) ADMIN_SUC = 'Todas';
+  var realSucs = [...new Set(allRows.map(function(r){ return r.sucursal; }).filter(function(s){ return s && s !== ''; }))]
+    .sort(function(a,b){ return a.localeCompare(b, 'es'); });
+  var hasEmpty = allRows.some(function(r){ return !r.sucursal || r.sucursal === ''; });
+  // Validar el filtro actual contra las sucursales disponibles
+  if (ADMIN_SUC !== 'Todas' && ADMIN_SUC !== '' && !realSucs.includes(ADMIN_SUC)) ADMIN_SUC = 'Todas';
+  if (ADMIN_SUC === '' && !hasEmpty) ADMIN_SUC = 'Todas';
+  var opts = ['<option value="Todas"'+(ADMIN_SUC==='Todas'?' selected':'')+'>Todas</option>'];
+  realSucs.forEach(function(s){ opts.push('<option value="'+escHtml(s)+'"'+(ADMIN_SUC===s?' selected':'')+'>'+escHtml(s)+'</option>'); });
+  if (hasEmpty) opts.push('<option value=""'+(ADMIN_SUC===''?' selected':'')+'>— sin sucursal —</option>');
+  sel.innerHTML = opts.join('');
+}
+
+/* ── Índice por tienda (navegación rápida por sucursal) ── */
+function buildSucIndex(allRows) {
+  var idx = document.getElementById('sucIndex');
+  if (!idx) return;
+  idx.innerHTML = '';
+
+  var counts = {};
+  allRows.forEach(function(r){
+    var s = (r.sucursal && r.sucursal.trim()) ? r.sucursal : '';
+    counts[s] = (counts[s] || 0) + 1;
+  });
+  var sucs = Object.keys(counts).filter(function(s){ return s !== ''; })
+    .sort(function(a,b){ return a.localeCompare(b, 'es'); });
+  var noSucCount = counts[''] || 0;
+
+  if (!sucs.length && !noSucCount) { idx.style.display = 'none'; return; }
+  idx.style.display = '';
+
+  var title = document.createElement('div');
+  title.className = 'suc-index-title';
+  title.textContent = '🏬 Índice por tienda · ' + sucs.length + ' tiendas';
+  idx.appendChild(title);
+
+  var wrap = document.createElement('div');
+  wrap.className = 'suc-index-chips';
+
+  function chip(label, value, count, active) {
+    var b = document.createElement('button');
+    b.className = 'suc-chip' + (active ? ' active' : '');
+    b.title = 'Filtrar: ' + label;
+    var n = document.createElement('span');
+    n.className = 'suc-chip-n';
+    n.textContent = count;
+    b.appendChild(document.createTextNode(label + ' '));
+    b.appendChild(n);
+    b.addEventListener('click', function(){ onAdminSuc(value); });
+    return b;
+  }
+
+  wrap.appendChild(chip('Todas', 'Todas', allRows.length, ADMIN_SUC === 'Todas'));
+  sucs.forEach(function(s){ wrap.appendChild(chip(s, s, counts[s], ADMIN_SUC === s)); });
+  if (noSucCount) wrap.appendChild(chip('— sin sucursal —', '', noSucCount, ADMIN_SUC === ''));
+
+  idx.appendChild(wrap);
 }
 
 /* ── Construcción del grid ── */
 function buildAdminGrid() {
   if (!ADMIN_DATA) return;
   focusedColIdx = null;
+  // Restaurar automáticamente las columnas del programa si están vacías,
+  // para que los encabezados (títulos) siempre aparezcan.
+  var restored = autoRestoreCols();
   var allRows = ADMIN_PROG === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
   // Etiquetar cada fila con su índice real en el array de datos
   allRows.forEach(function(r, i) { r._idx = i; });
   updateSucFilter(allRows);
-  var rows = ADMIN_SUC === 'Todas' ? allRows : allRows.filter(function(r){ return r.sucursal === ADMIN_SUC; });
+  buildSucIndex(allRows);
+  var rows = ADMIN_SUC === 'Todas' ? allRows : allRows.filter(function(r){ return (r.sucursal || '') === ADMIN_SUC; });
   var cols = getAdminCols();
   var grid = document.getElementById('adminGrid');
   if (!grid) return;
   grid.innerHTML = '';
 
-  // Banner de reparación cuando faltan columnas en HN/SV
+  // Aviso cuando aún no hay columnas tras intentar restaurarlas
   var repairBanner = document.getElementById('repairBanner');
   if (repairBanner) repairBanner.remove();
-  if (cols.length === 0 && CORRECT_CONFIG[ADMIN_PAIS]) {
+  if (cols.length === 0) {
     var banner = document.createElement('div');
     banner.id = 'repairBanner';
-    banner.style.cssText = 'background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;font-size:13px;color:#92400e';
-    banner.innerHTML = '<span>⚠️ Las columnas de <strong>' + ADMIN_PAIS + '</strong> no están configuradas en este sistema.</span>'
-      + '<button class="abtn" onclick="repairConfig()" style="background:#d97706;color:#fff;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">Restaurar columnas</button>';
+    if (ADMIN_PROG === 'bdo' && ADMIN_DATA.config && ADMIN_DATA.config.solo4x4) {
+      banner.style.cssText = 'background:#dbeafe;border:1px solid #3b82f6;border-radius:8px;padding:10px 16px;margin-bottom:12px;font-size:13px;color:#1e40af';
+      banner.innerHTML = 'ℹ️ <strong>' + ADMIN_PAIS + '</strong> solo maneja el programa <strong>Despliegue 4x4</strong>. Cambia el programa arriba para ver y editar sus datos.';
+    } else if (CORRECT_CONFIG[ADMIN_PAIS]) {
+      banner.style.cssText = 'background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;font-size:13px;color:#92400e';
+      banner.innerHTML = '<span>⚠️ Las columnas de <strong>' + ADMIN_PAIS + '</strong> no están configuradas en este sistema.</span>'
+        + '<button class="abtn" onclick="repairConfig()" style="background:#d97706;color:#fff;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">Restaurar columnas</button>';
+    } else {
+      banner.style.cssText = 'background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:10px 16px;margin-bottom:12px;font-size:13px;color:#92400e';
+      banner.innerHTML = '⚠️ No hay columnas configuradas. Usa <strong>＋ Columna</strong> para agregarlas.';
+    }
     grid.before(banner);
   }
 
@@ -185,6 +264,8 @@ function buildAdminGrid() {
   grid.appendChild(makeNotaCol(rows));
 
   updateFocusHint();
+
+  if (restored) showToast('Columnas restauradas automáticamente — revisa y presiona Guardar para conservarlas.', 'success');
 }
 
 function getAdminCols() {
@@ -194,6 +275,28 @@ function getAdminCols() {
     return qr.concat(vid);
   }
   return ADMIN_DATA.config.sesCols || [];
+}
+
+/* Restaura las columnas por defecto del programa actual si están vacías,
+   de modo que los encabezados (títulos) siempre se muestren. Solo toca el
+   programa actual y no sobrescribe columnas ya existentes. */
+function autoRestoreCols() {
+  var cc = CORRECT_CONFIG[ADMIN_PAIS];
+  if (!cc || !ADMIN_DATA || !ADMIN_DATA.config) return false;
+  if (getAdminCols().length > 0) return false;
+  var cfg = ADMIN_DATA.config;
+  if (ADMIN_PROG === 'bdo') {
+    var qr  = (cc.bdoCols && cc.bdoCols.qr)    || [];
+    var vid = (cc.bdoCols && cc.bdoCols.video) || [];
+    if (!qr.length && !vid.length) return false; // este país no maneja BDO (ej. SV)
+    cfg.bdoCols = { qr: qr.slice(), video: vid.slice() };
+  } else {
+    if (!cc.sesCols || !cc.sesCols.length) return false;
+    cfg.sesCols = cc.sesCols.slice();
+  }
+  // Completar divisores faltantes sin pisar los que el usuario ya definió
+  cfg.divisors = Object.assign({}, cc.divisors || {}, cfg.divisors || {});
+  return true;
 }
 
 function repairConfig() {
@@ -279,14 +382,26 @@ function makeFixedCol(rows) {
     info.appendChild(nameDiv);
     info.appendChild(sucDiv);
 
+    var actions = document.createElement('div');
+    actions.className = 'row-actions';
+
+    var editBtn = document.createElement('span');
+    editBtn.className = 'edit-row';
+    editBtn.title = 'Editar nombre y sucursal';
+    editBtn.textContent = '✏️';
+    editBtn.addEventListener('click', function() { editRow(realIdx); });
+
     var delBtn = document.createElement('span');
     delBtn.className = 'del-row';
     delBtn.title = 'Eliminar fila';
     delBtn.textContent = '✕';
     delBtn.addEventListener('click', function() { deleteRow(realIdx); });
 
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+
     cell.appendChild(info);
-    cell.appendChild(delBtn);
+    cell.appendChild(actions);
     group.appendChild(cell);
   });
   return group;
@@ -480,12 +595,43 @@ function updateFocusHint() {
 }
 
 /* ── CRUD ── */
-function addRow() {
+/* Lista ordenada de sucursales conocidas (config + filas) para los selects */
+function sucListForSelect() {
   var allRows = ADMIN_PROG === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
   var configSucs = ((ADMIN_DATA.config && ADMIN_DATA.config.sucursales) || []).map(function(s){ return s.nombre; });
   var rowSucs = [...new Set(allRows.map(function(r){ return r.sucursal; }).filter(Boolean))];
-  var allSucs = [...new Set([].concat(configSucs, rowSucs))].sort();
+  return [...new Set([].concat(configSucs, rowSucs))].filter(Boolean)
+    .sort(function(a,b){ return a.localeCompare(b, 'es'); });
+}
 
+/* Inyecta el campo "Sucursal" (select + botón nueva sucursal) en el modal abierto */
+function injectSucField(selected) {
+  var fieldsDiv = document.querySelector('#modalBox .modal-fields');
+  if (!fieldsDiv) return;
+  var opts = '<option value=""'+(selected ? '' : ' selected')+'>— sin sucursal —</option>';
+  opts += sucListForSelect().map(function(s){
+    return '<option value="'+escHtml(s)+'"'+(s===selected?' selected':'')+'>'+escHtml(s)+'</option>';
+  }).join('');
+  fieldsDiv.insertAdjacentHTML('beforeend',
+    '<label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;margin-top:8px">Sucursal</label>'
+    + '<select id="addRowSucSel" style="width:100%">' + opts + '</select>'
+    + '<button type="button" onclick="openAddSucModal()" style="margin-top:6px;font-size:11px;background:none;border:none;color:inherit;cursor:pointer;padding:2px 0;text-decoration:underline;display:block;opacity:.7">+ Agregar nueva sucursal</button>'
+  );
+}
+
+/* Deriva región/zona de una sucursal (desde config o desde otra fila igual) */
+function deriveRegionZona(suc, excludeRow) {
+  var pk = getProgKey();
+  var sc = ((ADMIN_DATA.config && ADMIN_DATA.config.sucursales) || []).find(function(s){ return s.nombre === suc; });
+  if (!sc && suc) {
+    var other = (ADMIN_DATA[pk] || []).find(function(r){ return r !== excludeRow && r.sucursal === suc && (r.region || r.zona); });
+    if (other) sc = { region: other.region, zona: other.zona };
+  }
+  return { region: sc ? (sc.region || '') : '', zona: sc ? (sc.zona || '') : '' };
+}
+
+function addRow() {
+  _addSucReturn = addRow;
   openModal('Agregar colaborador', [
     { id: 'newNombre', label: 'Nombre completo', type: 'text', placeholder: 'Ej: Juan Pérez' },
   ], function(vals) {
@@ -494,8 +640,8 @@ function addRow() {
     if (!vals.newNombre.trim()) { showToast('El nombre es requerido', 'error'); return false; }
     var region = '', zona = '';
     if (ADMIN_PAIS === 'GT' && suc) {
-      var sc = ((ADMIN_DATA.config && ADMIN_DATA.config.sucursales) || []).find(function(s){ return s.nombre === suc; });
-      if (sc) { region = sc.region || ''; zona = sc.zona || ''; }
+      var rz = deriveRegionZona(suc, null);
+      region = rz.region; zona = rz.zona;
     }
     var cols = getAdminCols();
     var valores = {};
@@ -505,17 +651,35 @@ function addRow() {
     showToast('Colaborador agregado');
     return true;
   });
+  injectSucField('');
+}
 
-  // Inject sucursal select + "Agregar nueva sucursal" button into the modal
-  var fieldsDiv = document.querySelector('#modalBox .modal-fields');
-  var opts = allSucs.map(function(s){ return '<option value="'+escHtml(s)+'">'+escHtml(s)+'</option>'; }).join('');
-  fieldsDiv.insertAdjacentHTML('beforeend',
-    '<label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;margin-top:8px">Sucursal</label>'
-    + '<select id="addRowSucSel" style="width:100%">'
-    + (opts || '<option value="">— sin sucursal —</option>')
-    + '</select>'
-    + '<button type="button" onclick="openAddSucModal()" style="margin-top:6px;font-size:11px;background:none;border:none;color:inherit;cursor:pointer;padding:2px 0;text-decoration:underline;display:block;opacity:.7">+ Agregar nueva sucursal</button>'
-  );
+/* Editar un colaborador existente: nombre + sucursal (y región/zona en GT) */
+function editRow(realIdx) {
+  var pk = getProgKey();
+  var row = ADMIN_DATA[pk] && ADMIN_DATA[pk][realIdx];
+  if (!row) return;
+  _addSucReturn = function(){ editRow(realIdx); };
+  openModal('Editar colaborador', [
+    { id: 'newNombre', label: 'Nombre completo', type: 'text', placeholder: 'Ej: Juan Pérez' },
+  ], function(vals) {
+    var sucSel = document.getElementById('addRowSucSel');
+    var suc = sucSel ? sucSel.value.trim() : '';
+    var nombre = (vals.newNombre || '').trim();
+    if (!nombre) { showToast('El nombre es requerido', 'error'); return false; }
+    row.nombre = nombre;
+    row.sucursal = suc;
+    if (ADMIN_PAIS === 'GT') {
+      var rz = deriveRegionZona(suc, row);
+      row.region = rz.region; row.zona = rz.zona;
+    }
+    buildAdminGrid();
+    showToast('Colaborador actualizado ✓');
+    return true;
+  });
+  var nameInp = document.getElementById('mf_newNombre');
+  if (nameInp) nameInp.value = row.nombre || '';
+  injectSucField(row.sucursal || '');
 }
 
 function openAddSucModal() {
@@ -547,7 +711,7 @@ function openAddSucModal() {
     if (!ADMIN_DATA.config.sucursales) ADMIN_DATA.config.sucursales = [];
     ADMIN_DATA.config.sucursales.push({ nombre: nombre, region: vals.newSucRegion || '', zona: vals.newSucZona || '' });
     closeModal();
-    addRow();
+    (_addSucReturn || addRow)();
     setTimeout(function() {
       var ni = document.getElementById('mf_newNombre');
       if (ni) ni.value = savedNombre;

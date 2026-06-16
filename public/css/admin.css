@@ -119,3 +119,19 @@
 
 /* ── Rename inline input ── */
 .col-rename-inp { flex: 1; border: 1px solid var(--focus-border); border-radius: 6px; padding: 2px 6px; font-size: 12px; font-weight: 700; background: var(--focus-bg); color: var(--focus-text); outline: none; min-width: 0; }
+
+/* ── Acciones de fila (editar / eliminar) ── */
+.col-cell.name-cell .row-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.col-cell.name-cell .edit-row { font-size: 13px; opacity: 0.4; cursor: pointer; transition: opacity .15s, transform .15s; line-height: 1; }
+.col-group.fixed-col .col-cell:hover .edit-row { opacity: 0.75; }
+.col-cell.name-cell .edit-row:hover { opacity: 1 !important; transform: scale(1.15); }
+
+/* ── Índice por tienda ── */
+.suc-index { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 12px 16px; margin-bottom: 16px; }
+.suc-index-title { font-size: 11px; font-weight: 700; color: var(--muted-fg); margin-bottom: 9px; text-transform: uppercase; letter-spacing: .04em; }
+.suc-index-chips { display: flex; flex-wrap: wrap; gap: 7px; max-height: 136px; overflow-y: auto; }
+.suc-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 20px; border: 1px solid var(--border); background: var(--soft); font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer; transition: all .15s; white-space: nowrap; }
+.suc-chip:hover { border-color: var(--primary); background: #fff; }
+.suc-chip.active { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.suc-chip .suc-chip-n { font-size: 11px; font-weight: 700; background: rgba(15,23,42,.08); padding: 0 6px; border-radius: 10px; min-width: 18px; text-align: center; }
+.suc-chip.active .suc-chip-n { background: rgba(255,255,255,.28); }
