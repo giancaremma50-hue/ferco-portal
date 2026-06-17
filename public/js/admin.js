@@ -915,18 +915,19 @@ function escHtml(s) {
 /* ── Ranking de sucursales ── */
 async function generarRanking() {
   showToast('Cargando datos de los 3 países...');
-  var gtData, hnData, svData;
-  try {
-    var results = await Promise.all([
-      loadCountryData('GT'),
-      loadCountryData('HN'),
-      loadCountryData('SV'),
-    ]);
-    gtData = results[0]; hnData = results[1]; svData = results[2];
-  } catch (err) {
-    showToast('Error cargando datos: ' + err.message, 'error');
+  var results = await Promise.allSettled([
+    loadCountryData('GT'),
+    loadCountryData('HN'),
+    loadCountryData('SV'),
+  ]);
+  if (results.every(function(r){ return r.status === 'rejected'; })) {
+    showToast('Error cargando datos del ranking', 'error');
     return;
   }
+  // Si un país falla, se usa {} y aparecerá como "(sin datos)" sin romper el resto
+  var gtData = results[0].status === 'fulfilled' ? results[0].value : {};
+  var hnData = results[1].status === 'fulfilled' ? results[1].value : {};
+  var svData = results[2].status === 'fulfilled' ? results[2].value : {};
 
   var rankings = {
     bdoGT: calcRankingSuc(gtData.bdo  || [], gtData.config  || {}, 'bdo'),
@@ -942,9 +943,12 @@ async function generarRanking() {
 function calcRankingSuc(rows, config, prog) {
   var grouped = {};
   rows.forEach(function(r) {
-    if (!r.sucursal) return;
-    if (!grouped[r.sucursal]) grouped[r.sucursal] = [];
-    grouped[r.sucursal].push(r);
+    var suc = (r.sucursal || '').trim();
+    // Excluir filas sin sucursal y placeholders con '#' (igual que el portal),
+    // y unir sucursales que solo difieren por espacios al inicio/final.
+    if (!suc || suc.indexOf('#') !== -1) return;
+    if (!grouped[suc]) grouped[suc] = [];
+    grouped[suc].push(r);
   });
 
   var results = [];
@@ -993,14 +997,21 @@ function buildRankingText(r) {
     }).join('\n');
   }
 
-  function criticasBlock(ranking) {
-    var rojas  = ranking.filter(function(s){ return s.score <  50; });
-    var riesgo = ranking.filter(function(s){ return s.score >= 50 && s.score < 80; });
-    if (!rojas.length && !riesgo.length) return '    ✅ Todas sobre el 80%';
-    var lines = [];
-    if (rojas.length)  lines.push('    🔴 Críticas: '  + rojas.map( function(s){ return s.sucursal+' '+s.score.toFixed(1)+'%'; }).join(', '));
-    if (riesgo.length) lines.push('    🟡 En riesgo: ' + riesgo.map(function(s){ return s.sucursal+' '+s.score.toFixed(1)+'%'; }).join(', '));
-    return lines.join('\n');
+  function classifBlock(ranking) {
+    if (!ranking.length) return '    (sin datos)';
+    function fmt(list, empty) {
+      return list.length
+        ? list.map(function(s){ return s.sucursal + ' ' + s.score.toFixed(1) + '%'; }).join(', ')
+        : empty;
+    }
+    var crit = ranking.filter(function(s){ return s.score < 50; });
+    var acep = ranking.filter(function(s){ return s.score >= 50 && s.score < 81; });
+    var opt  = ranking.filter(function(s){ return s.score >= 81; });
+    return [
+      '    🔴 Crítica (<50%): '     + fmt(crit, 'ninguna ✅'),
+      '    🟡 Aceptable (50–80%): ' + fmt(acep, 'ninguna'),
+      '    🟢 Óptima (≥81%): '      + fmt(opt,  'ninguna'),
+    ].join('\n');
   }
 
   var lines = [
@@ -1011,11 +1022,11 @@ function buildRankingText(r) {
     'Honduras',
     top3Block(r.bdoHN),
     SEP,
-    '⚠️ SUCURSALES CRÍTICAS (bajo 80%)',
+    '📊 CLASIFICACIÓN DE SUCURSALES',
     'Guatemala',
-    criticasBlock(r.bdoGT),
+    classifBlock(r.bdoGT),
     'Honduras',
-    criticasBlock(r.bdoHN),
+    classifBlock(r.bdoHN),
     '',
     '📊 DESPLIEGUE 4x4',
     '🏆 TOP 3 POR PAÍS',
@@ -1026,13 +1037,13 @@ function buildRankingText(r) {
     'Honduras',
     top3Block(r.d4xHN),
     SEP,
-    '⚠️ SUCURSALES CRÍTICAS (bajo 80%)',
+    '📊 CLASIFICACIÓN DE SUCURSALES',
     'Guatemala',
-    criticasBlock(r.d4xGT),
+    classifBlock(r.d4xGT),
     'El Salvador',
-    criticasBlock(r.d4xSV),
+    classifBlock(r.d4xSV),
     'Honduras',
-    criticasBlock(r.d4xHN),
+    classifBlock(r.d4xHN),
   ];
   return lines.join('\n');
 }
