@@ -10,6 +10,8 @@
 .admin-header { background: #0f172a; color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .admin-header h1 { font-size: 18px; font-weight: 800; }
 .admin-header .badge-admin { background: var(--primary); color: var(--primary-fg); padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.admin-header .last-update { color: #94a3b8; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.admin-header .last-update:empty { display: none; }
 
 /* ── Login overlay ── */
 #loginOverlay { position: fixed; inset: 0; background: rgba(15,23,42,.85); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999; }
