@@ -137,7 +137,7 @@ function buildGridWrapEl() {
   frag.appendChild(wrap);
   var hint = document.createElement('p');
   hint.style.cssText = 'font-size:11px;color:var(--muted);margin-top:10px;padding:0 4px';
-  hint.textContent = '💡 Clic en una tienda del índice para filtrarla. Usa ✏️ para editar el nombre y la sucursal de un colaborador. Doble clic en el nombre de columna para renombrarla.';
+  hint.textContent = '💡 Clic en una tienda del índice para filtrarla. Usa ✏️ para editar nombre, sucursal y canal. Doble clic en el nombre de columna para renombrarla.';
   frag.appendChild(hint);
   return frag;
 }
@@ -401,7 +401,9 @@ function makeFixedCol(rows) {
 
     var sucDiv = document.createElement('div');
     sucDiv.className = 'row-suc';
-    sucDiv.textContent = row.sucursal || '';
+    var sucText = row.sucursal || '';
+    if (row.canal) sucText = sucText ? (sucText + ' · ' + row.canal) : row.canal;
+    sucDiv.textContent = sucText;
 
     info.appendChild(nameDiv);
     info.appendChild(sucDiv);
@@ -411,7 +413,7 @@ function makeFixedCol(rows) {
 
     var editBtn = document.createElement('span');
     editBtn.className = 'edit-row';
-    editBtn.title = 'Editar nombre y sucursal';
+    editBtn.title = 'Editar nombre, sucursal y canal';
     editBtn.textContent = '✏️';
     editBtn.addEventListener('click', function() { editRow(realIdx); });
 
@@ -628,6 +630,30 @@ function sucListForSelect() {
     .sort(function(a,b){ return a.localeCompare(b, 'es'); });
 }
 
+/* Lista ordenada de canales conocidos (desde ambos programas) */
+function canalListForSelect() {
+  var bdo = ADMIN_DATA.bdo || [];
+  var x4x = ADMIN_DATA.x4x || [];
+  return [...new Set(bdo.concat(x4x).map(function(r){ return (r.canal || '').trim(); }).filter(Boolean))]
+    .sort(function(a,b){ return a.localeCompare(b, 'es'); });
+}
+
+/* Inyecta el campo "Canal" (select) en el modal abierto — solo si el país tiene canales */
+function injectCanalField(selected) {
+  if (!ADMIN_DATA || !ADMIN_DATA.config || !ADMIN_DATA.config.tieneCanal) return;
+  var fieldsDiv = document.querySelector('#modalBox .modal-fields');
+  if (!fieldsDiv) return;
+  var canales = canalListForSelect();
+  var opts = '<option value=""'+(selected ? '' : ' selected')+'>— sin canal —</option>';
+  opts += canales.map(function(c){
+    return '<option value="'+escHtml(c)+'"'+(c===selected?' selected':'')+'>'+escHtml(c)+'</option>';
+  }).join('');
+  fieldsDiv.insertAdjacentHTML('beforeend',
+    '<label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;margin-top:8px">Canal</label>'
+    + '<select id="addRowCanalSel" style="width:100%">' + opts + '</select>'
+  );
+}
+
 /* Inyecta el campo "Sucursal" (select + botón nueva sucursal) en el modal abierto */
 function injectSucField(selected) {
   var fieldsDiv = document.querySelector('#modalBox .modal-fields');
@@ -661,6 +687,8 @@ function addRow() {
   ], function(vals) {
     var sucSel = document.getElementById('addRowSucSel');
     var suc = sucSel ? sucSel.value.trim() : '';
+    var canalSel = document.getElementById('addRowCanalSel');
+    var canal = canalSel ? canalSel.value.trim() : '';
     if (!vals.newNombre.trim()) { showToast('El nombre es requerido', 'error'); return false; }
     var region = '', zona = '';
     if (ADMIN_PAIS === 'GT' && suc) {
@@ -670,15 +698,16 @@ function addRow() {
     var cols = getAdminCols();
     var valores = {};
     cols.forEach(function(c){ valores[c] = 0; });
-    ADMIN_DATA[getProgKey()].push({ canal: '', region: region, zona: zona, sucursal: suc, nombre: vals.newNombre.trim(), valores: valores, nota: '' });
+    ADMIN_DATA[getProgKey()].push({ canal: canal, region: region, zona: zona, sucursal: suc, nombre: vals.newNombre.trim(), valores: valores, nota: '' });
     buildAdminGrid();
     showToast('Colaborador agregado');
     return true;
   });
   injectSucField('');
+  injectCanalField('');
 }
 
-/* Editar un colaborador existente: nombre + sucursal (y región/zona en GT) */
+/* Editar un colaborador existente: nombre, sucursal y canal */
 function editRow(realIdx) {
   var pk = getProgKey();
   var row = ADMIN_DATA[pk] && ADMIN_DATA[pk][realIdx];
@@ -689,10 +718,13 @@ function editRow(realIdx) {
   ], function(vals) {
     var sucSel = document.getElementById('addRowSucSel');
     var suc = sucSel ? sucSel.value.trim() : '';
+    var canalSel = document.getElementById('addRowCanalSel');
+    var canal = canalSel ? canalSel.value.trim() : '';
     var nombre = (vals.newNombre || '').trim();
     if (!nombre) { showToast('El nombre es requerido', 'error'); return false; }
     row.nombre = nombre;
     row.sucursal = suc;
+    row.canal = canal;
     if (ADMIN_PAIS === 'GT') {
       var rz = deriveRegionZona(suc, row);
       row.region = rz.region; row.zona = rz.zona;
@@ -704,12 +736,16 @@ function editRow(realIdx) {
   var nameInp = document.getElementById('mf_newNombre');
   if (nameInp) nameInp.value = row.nombre || '';
   injectSucField(row.sucursal || '');
+  injectCanalField(row.canal || '');
 }
 
 function openAddSucModal() {
   var savedNombre = '';
   var nombreEl = document.getElementById('mf_newNombre');
   if (nombreEl) savedNombre = nombreEl.value;
+  var savedCanal = '';
+  var canalEl = document.getElementById('addRowCanalSel');
+  if (canalEl) savedCanal = canalEl.value;
 
   var allRows = ADMIN_DATA[getProgKey()] || [];
   var fields = [
@@ -741,6 +777,8 @@ function openAddSucModal() {
       if (ni) ni.value = savedNombre;
       var sel = document.getElementById('addRowSucSel');
       if (sel) sel.value = nombre;
+      var cs = document.getElementById('addRowCanalSel');
+      if (cs) cs.value = savedCanal;
     }, 50);
     return false;
   });
