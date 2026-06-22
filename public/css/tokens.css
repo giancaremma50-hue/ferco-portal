@@ -16,7 +16,8 @@
   --secondary:  #f3f4f6;
 
   /* === Tipografía === */
-  --muted:    #f9fafb;
+  /* --muted es color de TEXTO secundario (gris legible). Para fondos usar --soft. */
+  --muted:    #6b7280;
   --muted-fg: #6b7280;
 
   /* === Semánticos === */
