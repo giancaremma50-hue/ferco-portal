@@ -16,6 +16,19 @@ function isV(v) { return v && !String(v).includes('#'); }
 function uniq(a) { return [...new Set(a.filter(function(v){ return isV(v); }))].sort(); }
 function pct(v)  { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 function avg(arr) { return arr.length ? Math.round(arr.reduce(function(a,b){ return a+b; }, 0) / arr.length) : 0; }
+
+/* Columnas "activas" de un grupo: aquellas donde al menos un colaborador ya
+   tiene avance (> 0). Las que están en 0% para todo el grupo (módulos aún no
+   habilitados) se consideran inactivas. */
+function activeCols(cols, rws) {
+  return cols.filter(function(c){ return rws.some(function(r){ return pct(r.valores && r.valores[c]) > 0; }); });
+}
+/* Promedio dinámico: promedia solo sobre las columnas activas del grupo. */
+function dynAvg(cols, rws) {
+  var act = activeCols(cols, rws);
+  if (!act.length) return 0;
+  return avg(act.reduce(function(a,c){ return a.concat(rws.map(function(r){ return pct(r.valores && r.valores[c]); })); }, []));
+}
 function sc(v)   { if(v>=80) return 'good'; if(v>=61) return 'mid'; if(v>0) return 'bad'; return 'zero'; }
 function svc(v)  { if(v>=80) return 'cg'; if(v>=61) return 'cm'; if(v>0) return 'cb'; return 'c0'; }
 function ssv(v)  { if(v>=80) return 'sg'; if(v>=61) return 'sm'; if(v>0) return 'sb'; return 's0'; }
@@ -126,10 +139,12 @@ function renderKPIs() {
   var rows = fdRows(), isBdo = state.prog === 'bdo', cards = '';
   if (isBdo) {
     var qr = getQR(), vid = getVid();
-    var vQR = avg(qr.reduce(function(a,c){ return a.concat(rows.map(function(r){ return pct(r.valores && r.valores[c]); })); }, []));
-    var vV  = avg(vid.reduce(function(a,c){ return a.concat(rows.map(function(r){ return pct(r.valores && r.valores[c]); })); }, []));
-    cards += '<div class="kpi"><div class="lbl">Promedio QR</div><div class="val '+svc(vQR)+'">'+vQR+'%</div><div class="sub">'+qr.length+' mód</div></div>';
-    cards += '<div class="kpi"><div class="lbl">Entrega Video</div><div class="val '+svc(vV)+'">'+vV+'%</div><div class="sub">'+vid.length+' mód</div></div>';
+    var actQr = activeCols(qr, rows), actVid = activeCols(vid, rows);
+    var vQR = dynAvg(qr, rows), vV = dynAvg(vid, rows);
+    var modQr  = actQr.length  === qr.length  ? qr.length  + ' mód' : actQr.length  + '/' + qr.length  + ' mód';
+    var modVid = actVid.length === vid.length ? vid.length + ' mód' : actVid.length + '/' + vid.length + ' mód';
+    cards += '<div class="kpi"><div class="lbl">Promedio QR</div><div class="val '+svc(vQR)+'">'+vQR+'%</div><div class="sub">'+modQr+'</div></div>';
+    cards += '<div class="kpi"><div class="lbl">Entrega Video</div><div class="val '+svc(vV)+'">'+vV+'%</div><div class="sub">'+modVid+'</div></div>';
   } else {
     getSes().forEach(function(s, i) {
       var v = avg(rows.map(function(r){ return pct(r.valores && r.valores[s]); }));
@@ -149,22 +164,28 @@ function renderKPIs() {
 function renderDetalle() {
   var rows = fdRows(), isBdo = state.prog === 'bdo';
   var allMet = isBdo ? getQR().concat(getVid()) : getSes();
-  var met1 = isBdo ? getQR() : getSes().slice(0,1);
-  var met2 = isBdo ? getVid() : getSes().slice(1,2);
-  var l1 = isBdo ? 'QR' : 'S1', l2 = isBdo ? 'Video' : 'S2';
   var sucs = uniq(rows.map(function(r){ return r.sucursal; })), brHtml = '';
+
+  function barHtml(label, v) {
+    return '<div class="bi-lbl"><span>'+label+'</span><span>'+v+'%</span></div>'
+         + '<div class="bw"><div class="bb" style="width:'+Math.min(v,100)+'%"></div></div>';
+  }
 
   for (var si = 0; si < sucs.length; si++) {
     var s = sucs[si];
     var sr = rows.filter(function(r){ return r.sucursal === s; });
-    var v1 = avg(met1.reduce(function(a,c){ return a.concat(sr.map(function(r){ return pct(r.valores && r.valores[c]); })); }, []));
-    var v2 = met2.length ? avg(met2.reduce(function(a,c){ return a.concat(sr.map(function(r){ return pct(r.valores && r.valores[c]); })); }, [])) : null;
+    var bars;
+    if (isBdo) {
+      // Bateador: promedio de columnas QR y promedio de columnas Video (solo activas)
+      bars = (getQR().length  ? barHtml('QR',    dynAvg(getQR(),  sr)) : '')
+           + (getVid().length ? barHtml('Video', dynAvg(getVid(), sr)) : '');
+    } else {
+      // Despliegue 4x4: promedio de todas las columnas de Sesiones (solo activas)
+      bars = getSes().length ? barHtml('Sesiones', dynAvg(getSes(), sr)) : '';
+    }
     brHtml += '<div class="bi '+(state.suc===s?'sel':'')+'" data-suc="'+encodeURIComponent(s)+'" onclick="selBr(this)">'
       +'<div class="bi-name">'+s+'</div><div class="bi-sub">'+sr.length+' colaboradores</div>'
-      +'<div class="bi-lbl"><span>'+l1+'</span><span>'+v1+'%</span></div>'
-      +'<div class="bw"><div class="bb" style="width:'+Math.min(v1,100)+'%"></div></div>'
-      +(v2!==null?'<div class="bi-lbl"><span>'+l2+'</span><span>'+v2+'%</span></div>'
-        +'<div class="bw"><div class="bb" style="width:'+Math.min(v2,100)+'%"></div></div>':'')
+      + bars
       +'</div>';
   }
   document.getElementById('branchPanel').innerHTML = brHtml || '<p style="color:var(--muted);padding:16px">Sin sucursales</p>';
