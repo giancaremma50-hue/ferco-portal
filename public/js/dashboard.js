@@ -175,8 +175,12 @@ function renderDetalle() {
   document.getElementById('tHead').innerHTML = thead;
 
   var tbody = '';
-  for (var ri = 0; ri < rows.length; ri++) {
-    var r = rows[ri];
+  var tRows = rows.slice().sort(function(a, b){
+    var s = (a.sucursal || '').localeCompare(b.sucursal || '', 'es', { sensitivity: 'base' });
+    return s !== 0 ? s : (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' });
+  });
+  for (var ri = 0; ri < tRows.length; ri++) {
+    var r = tRows[ri];
     if (!isV(r.sucursal)) continue;
     var cells = '';
     for (var ci = 0; ci < allMet.length; ci++) {
