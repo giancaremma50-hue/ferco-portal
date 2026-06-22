@@ -225,7 +225,13 @@ function buildAdminGrid() {
   allRows.forEach(function(r, i) { r._idx = i; });
   updateSucFilter(allRows);
   buildSucIndex(allRows);
-  var rows = ADMIN_SUC === 'Todas' ? allRows : allRows.filter(function(r){ return (r.sucursal || '') === ADMIN_SUC; });
+  // Ordenar al mostrar (por sucursal y luego por nombre), sin mutar los datos.
+  // Cada fila conserva su _idx real, así que editar/eliminar sigue siendo correcto.
+  var rows = (ADMIN_SUC === 'Todas' ? allRows : allRows.filter(function(r){ return (r.sucursal || '') === ADMIN_SUC; })).slice();
+  rows.sort(function(a, b){
+    var s = (a.sucursal || '').localeCompare(b.sucursal || '', 'es', { sensitivity: 'base' });
+    return s !== 0 ? s : (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' });
+  });
   var cols = getAdminCols();
   var grid = document.getElementById('adminGrid');
   if (!grid) return;
