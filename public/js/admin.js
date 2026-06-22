@@ -93,6 +93,7 @@ async function loadAdminCountry(pais) {
     }
   }
   setLoading(false);
+  updateLastUpdateLabel();
 }
 
 function showEmptyState(pais) {
@@ -144,6 +145,23 @@ function buildGridWrapEl() {
 function setLoading(on) {
   document.getElementById('adminLoader').style.display = on ? 'flex' : 'none';
   if (on) document.getElementById('adminContent').style.display = 'none';
+}
+
+/* ── Fecha de última actualización (encabezado) ── */
+function fmtUpdated(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  function p(n){ return (n < 10 ? '0' : '') + n; }
+  return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear()
+       + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+function updateLastUpdateLabel() {
+  var el = document.getElementById('lastUpdate');
+  if (!el) return;
+  var iso = ADMIN_DATA && ADMIN_DATA.updatedAt;
+  el.textContent = iso ? ('🕒 Última actualización: ' + fmtUpdated(iso) + ' · ' + ADMIN_PAIS) : '';
 }
 
 /* ── Filtro sucursal admin ── */
@@ -828,6 +846,7 @@ async function saveData() {
     showToast('Guardado y publicado ✓', 'success');
     // Recargar para mostrar el nuevo corte histórico
     ADMIN_DATA = await loadCountryData(ADMIN_PAIS);
+    updateLastUpdateLabel();
   } catch (err) {
     if (err.status === 401) {
       sessionStorage.removeItem('ferco-admin-pass');
