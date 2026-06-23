@@ -1111,22 +1111,280 @@ function buildRankingText(r) {
   return lines.join('\n');
 }
 
-function showRankingModal(text) {
+/* ══════════════════════════════════════════════════════════════
+   INFORME DE AVANCE PARA DIRECCIÓN Y REGIONALES
+   Fuente única y confiable: historico.cortes (cada "Guardar" crea un
+   corte fechado con los promedios por sucursal ya calculados en el
+   servidor). Se reportan cambios (deltas) entre cortes, que es la
+   señal verificable de avance. Se excluyen registros sin sucursal o
+   con '#', igual que el portal público.
+   ══════════════════════════════════════════════════════════════ */
+var INF_MIN_AVANCE  = 2;   // pts mínimos para contar como avance real
+var INF_DIAS_LIMITE = 15;  // días sin avance que marcan alerta crítica
+var INF_COMPLETA    = 95;  // % a partir del cual la tienda se considera completa
+
+function isValidSuc(s) { return !!s && String(s).indexOf('#') === -1; }
+
+/* Puntaje de una sucursal en un corte, por programa.
+   BDO = promedio de [bdo_qr, bdo_video] disponibles.
+   4x4 = promedio de sesiones iniciadas (>0), igual que el portal. */
+function snapScore(sd, prog) {
+  if (!sd) return null;
+  if (prog === 'bdo') {
+    var vals = [];
+    if (sd.bdo_qr != null)    vals.push(sd.bdo_qr);
+    if (sd.bdo_video != null) vals.push(sd.bdo_video);
+    if (!vals.length) return null;
+    return Math.round(vals.reduce(function(a,b){ return a+b; }, 0) / vals.length);
+  }
+  var ks = Object.keys(sd).filter(function(k){ return k.indexOf('4x4_s') === 0; });
+  if (!ks.length) return null;
+  var pos = ks.map(function(k){ return sd[k]; }).filter(function(v){ return v != null && v > 0; });
+  if (!pos.length) return 0;
+  return Math.round(pos.reduce(function(a,b){ return a+b; }, 0) / pos.length);
+}
+
+/* Serie temporal por sucursal: { suc: [{date, score}, ...] } (un punto por
+   fecha; si hay varios guardados el mismo día gana el último). */
+function buildSucSeries(cortes, prog) {
+  var sorted = cortes.slice().sort(function(a,b){ return (a.fecha||'').localeCompare(b.fecha||''); });
+  var tmp = {};
+  sorted.forEach(function(c){
+    var sucs = c.sucursales || {};
+    Object.keys(sucs).forEach(function(raw){
+      var suc = String(raw).trim();
+      if (!isValidSuc(suc)) return;
+      var s = snapScore(sucs[raw], prog);
+      if (s == null) return;
+      if (!tmp[suc]) tmp[suc] = {};
+      tmp[suc][c.fecha] = s;
+    });
+  });
+  var out = {};
+  Object.keys(tmp).forEach(function(suc){
+    var ds = Object.keys(tmp[suc]).sort();
+    out[suc] = ds.map(function(d){ return { date: d, score: tmp[suc][d] }; });
+  });
+  return out;
+}
+
+function daysBetween(d1, d2) {
+  var a = new Date(d1 + 'T00:00:00'), b = new Date(d2 + 'T00:00:00');
+  if (isNaN(a.getTime()) || isNaN(b.getTime())) return 0;
+  return Math.round((b - a) / 86400000);
+}
+function fmtCorta(iso) { var p = (iso||'').split('-'); return p.length === 3 ? (p[2]+'/'+p[1]) : (iso||''); }
+function fmtLarga(iso) { var p = (iso||'').split('-'); return p.length === 3 ? (p[2]+'/'+p[1]+'/'+p[0]) : (iso||''); }
+
+/* Última fecha en que el puntaje subió ≥ INF_MIN_AVANCE respecto al punto
+   anterior. Si nunca subió, devuelve la primera fecha (lleva estancada
+   desde que apareció). */
+function lastImprovementDate(pts) {
+  var last = pts[0].date;
+  for (var i = 1; i < pts.length; i++) {
+    if (pts[i].score - pts[i-1].score >= INF_MIN_AVANCE) last = pts[i].date;
+  }
+  return last;
+}
+
+/* Clasifica las sucursales de un programa en: avance / estancadas / críticas. */
+function classifyProg(cortes, prog) {
+  var series = buildSucSeries(cortes, prog);
+  var sucs = Object.keys(series);
+  var dateSet = {};
+  sucs.forEach(function(s){ series[s].forEach(function(p){ dateSet[p.date] = 1; }); });
+  var allDates = Object.keys(dateSet).sort();
+  if (allDates.length < 2 || !sucs.length) return { ok: false };
+
+  var latest = allDates[allDates.length - 1];
+  var prev   = allDates[allDates.length - 2];
+  var avance = [], estanc = [], criticas = [], completas = 0, nuevas = 0;
+
+  sucs.forEach(function(suc){
+    var pts = series[suc];
+    var scoreAt = {};
+    pts.forEach(function(p){ scoreAt[p.date] = p.score; });
+    var cur = scoreAt[latest];
+    if (cur == null) return;              // ya no está en el último corte
+    if (pts.length < 2) { nuevas++; return; } // historial insuficiente
+    var pv = scoreAt[prev];
+    var delta = (pv == null) ? null : (cur - pv);
+
+    if (cur >= INF_COMPLETA) { completas++; return; } // completa: no es alerta
+
+    if (delta != null && delta >= INF_MIN_AVANCE) {
+      avance.push({ suc: suc, prev: pv, cur: cur, delta: delta });
+      return;
+    }
+    var imp  = lastImprovementDate(pts);
+    var days = daysBetween(imp, latest);
+    var bajo = (delta != null && delta <= -INF_MIN_AVANCE) ? (-delta) : 0;
+    // fromStart = nunca registró un alza desde su primer corte
+    var item = { suc: suc, cur: cur, impDate: imp, days: days, bajo: bajo, fromStart: imp === pts[0].date };
+    if (days > INF_DIAS_LIMITE) criticas.push(item);
+    else                        estanc.push(item);
+  });
+
+  avance.sort(function(a,b){ return b.delta - a.delta || a.suc.localeCompare(b.suc, 'es'); });
+  estanc.sort(function(a,b){ return b.days  - a.days  || a.suc.localeCompare(b.suc, 'es'); });
+  criticas.sort(function(a,b){ return b.days - a.days || a.suc.localeCompare(b.suc, 'es'); });
+
+  return { ok: true, latest: latest, prev: prev, avance: avance, estanc: estanc, criticas: criticas, completas: completas, nuevas: nuevas };
+}
+
+/* Calidad de datos: colaboradores que quedarían fuera del informe por no
+   tener sucursal válida (la causa típica de cifras erróneas). */
+function dataQuality(d) {
+  var rows = [].concat(d.bdo || [], d.x4x || []);
+  var sinSuc = rows.filter(function(r){ return !isValidSuc((r.sucursal || '').trim()); });
+  var nombres = [...new Set(sinSuc.map(function(r){ return (r.nombre || '').trim() || '(sin nombre)'; }))];
+  return { total: rows.length, sinSuc: sinSuc.length, nombres: nombres };
+}
+
+/* Texto de detalle para una tienda estancada/crítica */
+function stallDesc(item) {
+  if (item.bajo) return 'bajó ' + item.bajo + ' pts · ' + item.days + ' días sin avance';
+  if (item.fromStart) return 'sin avance desde el primer corte ' + fmtCorta(item.impDate) + ' · ' + item.days + ' días';
+  return 'último avance ' + fmtCorta(item.impDate) + ' · ' + item.days + ' días';
+}
+
+function progSectionText(label, cl) {
+  var L = [];
+  L.push('▸ ' + label + '  (corte ' + fmtCorta(cl.prev) + ' → ' + fmtCorta(cl.latest) + ')');
+
+  if (cl.avance.length) {
+    L.push('  🚀 Mayor avance:');
+    cl.avance.slice(0, 8).forEach(function(a){
+      L.push('     • ' + a.suc + '  ' + a.prev + '% → ' + a.cur + '%  (+' + a.delta + ' pts)');
+    });
+    if (cl.avance.length > 8) L.push('     … y ' + (cl.avance.length - 8) + ' más');
+  } else {
+    L.push('  🚀 Mayor avance: ninguna subió ≥' + INF_MIN_AVANCE + ' pts en el último corte');
+  }
+
+  if (cl.estanc.length) {
+    L.push('  🟡 Estancadas (≤' + INF_DIAS_LIMITE + ' días sin avance):');
+    cl.estanc.slice(0, 10).forEach(function(e){
+      L.push('     • ' + e.suc + '  ' + e.cur + '%  (' + stallDesc(e) + ')');
+    });
+    if (cl.estanc.length > 10) L.push('     … y ' + (cl.estanc.length - 10) + ' más');
+  } else {
+    L.push('  🟡 Estancadas: ninguna ✅');
+  }
+
+  if (cl.criticas.length) {
+    L.push('  🔴 Sin avance > ' + INF_DIAS_LIMITE + ' días:');
+    cl.criticas.slice(0, 12).forEach(function(c){
+      L.push('     • ' + c.suc + '  ' + c.cur + '%  (' + stallDesc(c) + ')');
+    });
+    if (cl.criticas.length > 12) L.push('     … y ' + (cl.criticas.length - 12) + ' más');
+  } else {
+    L.push('  🔴 Sin avance > ' + INF_DIAS_LIMITE + ' días: ninguna ✅');
+  }
+
+  if (cl.completas) L.push('  ✅ ' + cl.completas + ' tienda(s) ya completas (≥' + INF_COMPLETA + '%)');
+  return L.join('\n');
+}
+
+function buildInformeText(data) {
+  var SEP = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+  var FLAGS = { GT: '🇬🇹 GUATEMALA', HN: '🇭🇳 HONDURAS', SV: '🇸🇻 EL SALVADOR' };
+  var PAISES = ['GT', 'HN', 'SV'];
+  var out = [];
+  out.push('📋 INFORME DE AVANCE — DIRECCIÓN Y REGIONALES');
+  out.push('Generado: ' + fmtUpdated(new Date().toISOString()));
+  out.push(SEP);
+
+  var calidad = [];
+
+  PAISES.forEach(function(p){
+    var d = data[p];
+    if (!d || !d.config) return;
+    var cortes = (d.historico && d.historico.cortes) || [];
+    out.push('');
+    out.push(FLAGS[p]);
+
+    if (!cortes.length) {
+      out.push('  (sin histórico guardado para evaluar avance)');
+    } else {
+      out.push('  Último corte guardado: ' + fmtLarga(cortes[cortes.length - 1].fecha));
+      var progs = [];
+      if (!d.config.solo4x4) {
+        var clB = classifyProg(cortes, 'bdo');
+        progs.push(clB.ok ? progSectionText('Bateador de Objeciones', clB)
+                          : '▸ Bateador de Objeciones: se necesitan al menos 2 cortes para evaluar avance.');
+      }
+      var clX = classifyProg(cortes, '4x4');
+      progs.push(clX.ok ? progSectionText('Despliegue 4x4', clX)
+                        : '▸ Despliegue 4x4: se necesitan al menos 2 cortes para evaluar avance.');
+      out.push(progs.join('\n\n'));
+    }
+
+    var q = dataQuality(d);
+    if (q.sinSuc > 0) {
+      var muestra = q.nombres.slice(0, 6).join(', ') + (q.nombres.length > 6 ? ', …' : '');
+      calidad.push('  • ' + p + ': ' + q.sinSuc + ' colaborador(es) sin sucursal — excluidos del informe (' + muestra + ')');
+    }
+  });
+
+  out.push('');
+  out.push(SEP);
+  if (calidad.length) {
+    out.push('⚠️ REVISAR SEGMENTACIÓN (datos excluidos por estar incompletos)');
+    out.push(calidad.join('\n'));
+    out.push('   → Asígnales su sucursal en el panel para incluirlos en el próximo informe.');
+    out.push('');
+  }
+  out.push('📌 CÓMO SE CALCULA (datos verificados de los cortes guardados)');
+  out.push('  • Cada "Guardar y publicar" crea un corte fechado; el informe compara esos cortes.');
+  out.push('  • BDO = promedio de QR y Video por tienda · 4x4 = promedio de sesiones iniciadas.');
+  out.push('  • 🚀 Mayor avance: subió ≥' + INF_MIN_AVANCE + ' pts entre los dos últimos cortes.');
+  out.push('  • 🟡 Estancada: sin subir hace ≤' + INF_DIAS_LIMITE + ' días.');
+  out.push('  • 🔴 Sin avance >' + INF_DIAS_LIMITE + ' días: su último incremento fue hace más de ' + INF_DIAS_LIMITE + ' días.');
+  out.push('  • Se excluyen registros sin sucursal o con "#", y tiendas completas (≥' + INF_COMPLETA + '%).');
+  return out.join('\n');
+}
+
+async function generarInforme() {
+  showToast('Generando informe de avance…');
+  var results = await Promise.allSettled([
+    loadCountryData('GT'),
+    loadCountryData('HN'),
+    loadCountryData('SV'),
+  ]);
+  if (results.every(function(r){ return r.status === 'rejected'; })) {
+    showToast('Error cargando datos del informe', 'error');
+    return;
+  }
+  var data = {
+    GT: results[0].status === 'fulfilled' ? results[0].value : null,
+    HN: results[1].status === 'fulfilled' ? results[1].value : null,
+    SV: results[2].status === 'fulfilled' ? results[2].value : null,
+  };
+  showCopyModal('📋 Informe de Avance', 'Resumen para dirección y regionales. Copia y pega en Outlook.', buildInformeText(data));
+}
+
+/* Modal genérico de "copiar texto" (lo usan Ranking e Informe) */
+function showCopyModal(title, subtitle, text) {
   var overlay = document.getElementById('modalOverlay');
   var box = document.getElementById('modalBox');
-  box.querySelector('h3').textContent = '📊 Ranking de Sucursales';
-  box.querySelector('p').textContent = 'Copia el texto y pégalo directamente en Outlook.';
+  box.querySelector('h3').textContent = title;
+  box.querySelector('p').textContent = subtitle;
   box.querySelector('.modal-fields').innerHTML =
-    '<textarea id="rankingTa" style="width:100%;height:300px;font-family:monospace;font-size:11px;line-height:1.6;border:1px solid var(--border);border-radius:6px;padding:10px;resize:vertical" readonly>' + escHtml(text) + '</textarea>'
-    + '<button onclick="copyRanking()" style="margin-top:8px;width:100%;background:#1e3a5f;color:#fff;border:none;padding:9px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px">📋 Copiar al portapapeles</button>';
+    '<textarea id="copyTa" style="width:100%;height:320px;font-family:monospace;font-size:11px;line-height:1.5;border:1px solid var(--border);border-radius:6px;padding:10px;resize:vertical;white-space:pre" readonly>' + escHtml(text) + '</textarea>'
+    + '<button onclick="copyModalText()" style="margin-top:8px;width:100%;background:#1e3a5f;color:#fff;border:none;padding:9px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px">📋 Copiar al portapapeles</button>';
   // Ocultar "Confirmar", cambiar "Cancelar" a "Cerrar"
   box.querySelector('.modal-confirm').style.display = 'none';
   box.querySelector('.modal-actions button:first-child').textContent = 'Cerrar';
   overlay.classList.add('open');
 }
 
-function copyRanking() {
-  var ta = document.getElementById('rankingTa');
+function showRankingModal(text) {
+  showCopyModal('📊 Ranking de Sucursales', 'Copia el texto y pégalo directamente en Outlook.', text);
+}
+
+function copyModalText() {
+  var ta = document.getElementById('copyTa');
   if (!ta) return;
   ta.select();
   try { document.execCommand('copy'); } catch(e) {}
