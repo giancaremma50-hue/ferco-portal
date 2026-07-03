@@ -1361,7 +1361,60 @@ async function generarInforme() {
     HN: results[1].status === 'fulfilled' ? results[1].value : null,
     SV: results[2].status === 'fulfilled' ? results[2].value : null,
   };
-  showCopyModal('📋 Informe de Avance', 'Resumen para dirección y regionales. Copia y pega en Outlook.', buildInformeText(data));
+  var rawText = buildInformeText(data);
+  showInformeModal(rawText);
+
+  var pass = sessionStorage.getItem('ferco-admin-pass') || '';
+  try {
+    var res = await fetch('/api/informe-ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pass },
+      body: JSON.stringify({ informe: rawText }),
+    });
+    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+
+    var ta = document.getElementById('copyTa');
+    var badge = document.getElementById('informeAiBadge');
+    if (!ta) return;
+
+    var reader = res.body.getReader();
+    var decoder = new TextDecoder();
+    var accumulated = '';
+    ta.value = '';
+
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      accumulated += decoder.decode(chunk.value, { stream: true });
+      if (accumulated.includes('[ERROR_IA]')) {
+        ta.value = rawText;
+        if (badge) { badge.textContent = '⚠️ IA no disponible — informe base'; badge.style.color = '#b45309'; }
+        return;
+      }
+      ta.value = accumulated;
+      ta.scrollTop = ta.scrollHeight;
+    }
+    if (badge) { badge.textContent = '✨ Generado con IA'; badge.style.color = '#0e7490'; }
+  } catch (e) {
+    var ta2 = document.getElementById('copyTa');
+    if (ta2 && !ta2.value.trim()) ta2.value = rawText;
+    var badge2 = document.getElementById('informeAiBadge');
+    if (badge2) { badge2.textContent = '⚠️ IA no disponible — informe base'; badge2.style.color = '#b45309'; }
+  }
+}
+
+function showInformeModal(rawText) {
+  var overlay = document.getElementById('modalOverlay');
+  var box = document.getElementById('modalBox');
+  box.querySelector('h3').textContent = '📋 Informe de Avance';
+  box.querySelector('p').textContent = 'Resumen para dirección y regionales. Copia y pega en Outlook.';
+  box.querySelector('.modal-fields').innerHTML =
+    '<div id="informeAiBadge" style="font-size:11px;color:#6b7280;margin-bottom:6px;min-height:18px">⏳ Generando versión ejecutiva con IA…</div>'
+    + '<textarea id="copyTa" style="width:100%;height:320px;font-family:monospace;font-size:11px;line-height:1.5;border:1px solid var(--border);border-radius:6px;padding:10px;resize:vertical;white-space:pre-wrap" readonly>' + escHtml(rawText) + '</textarea>'
+    + '<button onclick="copyModalText()" style="margin-top:8px;width:100%;background:#1e3a5f;color:#fff;border:none;padding:9px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px">📋 Copiar al portapapeles</button>';
+  box.querySelector('.modal-confirm').style.display = 'none';
+  box.querySelector('.modal-actions button:first-child').textContent = 'Cerrar';
+  overlay.classList.add('open');
 }
 
 /* Modal genérico de "copiar texto" (lo usan Ranking e Informe) */
