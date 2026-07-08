@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Portal web live para dashboards de formación Ferco Cerámica",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
     "@netlify/blobs": "^8.0.0"
   },
   "devDependencies": {

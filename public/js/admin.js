@@ -1361,7 +1361,60 @@ async function generarInforme() {
     HN: results[1].status === 'fulfilled' ? results[1].value : null,
     SV: results[2].status === 'fulfilled' ? results[2].value : null,
   };
-  showCopyModal('📋 Informe de Avance', 'Resumen para dirección y regionales. Copia y pega en Outlook.', buildInformeText(data));
+  var rawText = buildInformeText(data);
+  showInformeModal(rawText);
+
+  var pass = sessionStorage.getItem('ferco-admin-pass') || '';
+  try {
+    var res = await fetch('/api/informe-ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pass },
+      body: JSON.stringify({ informe: rawText }),
+    });
+    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+
+    var ta = document.getElementById('copyTa');
+    var badge = document.getElementById('informeAiBadge');
+    if (!ta) return;
+
+    var reader = res.body.getReader();
+    var decoder = new TextDecoder();
+    var accumulated = '';
+    ta.value = '';
+
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      accumulated += decoder.decode(chunk.value, { stream: true });
+      if (accumulated.includes('[ERROR_IA]')) {
+        ta.value = rawText;
+        if (badge) { badge.textContent = '⚠️ IA no disponible — informe base'; badge.style.color = '#b45309'; }
+        return;
+      }
+      ta.value = accumulated;
+      ta.scrollTop = ta.scrollHeight;
+    }
+    if (badge) { badge.textContent = '✨ Generado con IA'; badge.style.color = '#0e7490'; }
+  } catch (e) {
+    var ta2 = document.getElementById('copyTa');
+    if (ta2 && !ta2.value.trim()) ta2.value = rawText;
+    var badge2 = document.getElementById('informeAiBadge');
+    if (badge2) { badge2.textContent = '⚠️ IA no disponible — informe base'; badge2.style.color = '#b45309'; }
+  }
+}
+
+function showInformeModal(rawText) {
+  var overlay = document.getElementById('modalOverlay');
+  var box = document.getElementById('modalBox');
+  box.querySelector('h3').textContent = '📋 Informe de Avance';
+  box.querySelector('p').textContent = 'Resumen para dirección y regionales. Copia y pega en Outlook.';
+  box.querySelector('.modal-fields').innerHTML =
+    '<div id="informeAiBadge" style="font-size:11px;color:#6b7280;margin-bottom:6px;min-height:18px">⏳ Generando versión ejecutiva con IA…</div>'
+    + '<textarea id="copyTa" style="width:100%;height:320px;font-family:monospace;font-size:11px;line-height:1.5;border:1px solid var(--border);border-radius:6px;padding:10px;resize:vertical;white-space:pre-wrap" readonly>' + escHtml(rawText) + '</textarea>'
+    + '<button onclick="copyModalText()" style="margin-top:8px;width:100%;background:#1e3a5f;color:#fff;border:none;padding:9px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px">📋 Copiar al portapapeles</button>';
+  box.querySelector('.modal-confirm').style.display = 'none';
+  box.querySelector('.modal-actions button:first-child').textContent = 'Cerrar';
+  overlay.classList.add('open');
 }
 
 /* Modal genérico de "copiar texto" (lo usan Ranking e Informe) */
@@ -1389,4 +1442,77 @@ function copyModalText() {
   ta.select();
   try { document.execCommand('copy'); } catch(e) {}
   showToast('¡Copiado al portapapeles!', 'success');
+}
+
+/* ── Descarga de datos en Excel (CSV con BOM UTF-8) ── */
+function descargarExcel() {
+  if (!ADMIN_DATA) return;
+
+  var prog    = ADMIN_PROG;
+  var allRows = prog === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
+  var cols    = getAdminCols();
+  var cfg     = ADMIN_DATA.config || {};
+  var tieneCanal  = cfg.tieneCanal;
+  var tieneRegion = cfg.tieneRegion;
+  var tieneZona   = cfg.tieneZona;
+
+  // Cabeceras
+  var headers = [];
+  if (tieneCanal)  headers.push('Canal');
+  if (tieneRegion) headers.push('Región');
+  if (tieneZona)   headers.push('Zona');
+  headers.push('Sucursal', 'Nombre');
+  cols.forEach(function(c) { headers.push(c); });
+  headers.push('Nota');
+
+  function csvCell(v) {
+    var s = (v === null || v === undefined) ? '' : String(v);
+    if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+      s = '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  var lines = [headers.map(csvCell).join(',')];
+
+  // Ordenar igual que el grid: sucursal → nombre
+  var sorted = allRows.slice().sort(function(a, b) {
+    var s = (a.sucursal || '').localeCompare(b.sucursal || '', 'es', { sensitivity: 'base' });
+    return s !== 0 ? s : (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' });
+  });
+
+  sorted.forEach(function(row) {
+    var vals = row.valores || {};
+    var cells = [];
+    if (tieneCanal)  cells.push(row.canal  || '');
+    if (tieneRegion) cells.push(row.region || '');
+    if (tieneZona)   cells.push(row.zona   || '');
+    cells.push(row.sucursal || '', row.nombre || '');
+    cols.forEach(function(c) {
+      var pct = vals[c];
+      if (pct === undefined || pct === null) { cells.push(''); return; }
+      var div = getDivisor(c);
+      // Convertir % almacenado de vuelta a puntuación bruta (ej. 80% con divisor 5 → 4)
+      var raw = Math.round((pct / 100) * div * 10) / 10;
+      cells.push(raw);
+    });
+    cells.push(row.nota || '');
+    lines.push(cells.map(csvCell).join(','));
+  });
+
+  var prog_label = prog === 'bdo' ? 'BDO' : '4x4';
+  var filename = 'Ferco_' + ADMIN_PAIS + '_' + prog_label + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+
+  // BOM UTF-8 para que Excel abra tildes/ñ correctamente
+  var bom = '﻿';
+  var blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Descargando ' + filename, 'success');
 }
