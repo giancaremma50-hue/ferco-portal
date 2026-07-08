@@ -1465,15 +1465,17 @@ function descargarExcel() {
   cols.forEach(function(c) { headers.push(c); });
   headers.push('Nota');
 
+  var SEP = ';';
+
   function csvCell(v) {
     var s = (v === null || v === undefined) ? '' : String(v);
-    if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+    if (s.indexOf(SEP) !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
       s = '"' + s.replace(/"/g, '""') + '"';
     }
     return s;
   }
 
-  var lines = [headers.map(csvCell).join(',')];
+  var lines = [headers.map(csvCell).join(SEP)];
 
   // Ordenar igual que el grid: sucursal → nombre
   var sorted = allRows.slice().sort(function(a, b) {
@@ -1497,7 +1499,7 @@ function descargarExcel() {
       cells.push(raw);
     });
     cells.push(row.nota || '');
-    lines.push(cells.map(csvCell).join(','));
+    lines.push(cells.map(csvCell).join(SEP));
   });
 
   var prog_label = prog === 'bdo' ? 'BDO' : '4x4';
