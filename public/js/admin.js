@@ -1443,3 +1443,76 @@ function copyModalText() {
   try { document.execCommand('copy'); } catch(e) {}
   showToast('¡Copiado al portapapeles!', 'success');
 }
+
+/* ── Descarga de datos en Excel (CSV con BOM UTF-8) ── */
+function descargarExcel() {
+  if (!ADMIN_DATA) return;
+
+  var prog    = ADMIN_PROG;
+  var allRows = prog === 'bdo' ? (ADMIN_DATA.bdo || []) : (ADMIN_DATA.x4x || []);
+  var cols    = getAdminCols();
+  var cfg     = ADMIN_DATA.config || {};
+  var tieneCanal  = cfg.tieneCanal;
+  var tieneRegion = cfg.tieneRegion;
+  var tieneZona   = cfg.tieneZona;
+
+  // Cabeceras
+  var headers = [];
+  if (tieneCanal)  headers.push('Canal');
+  if (tieneRegion) headers.push('Región');
+  if (tieneZona)   headers.push('Zona');
+  headers.push('Sucursal', 'Nombre');
+  cols.forEach(function(c) { headers.push(c); });
+  headers.push('Nota');
+
+  function csvCell(v) {
+    var s = (v === null || v === undefined) ? '' : String(v);
+    if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+      s = '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  var lines = [headers.map(csvCell).join(',')];
+
+  // Ordenar igual que el grid: sucursal → nombre
+  var sorted = allRows.slice().sort(function(a, b) {
+    var s = (a.sucursal || '').localeCompare(b.sucursal || '', 'es', { sensitivity: 'base' });
+    return s !== 0 ? s : (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' });
+  });
+
+  sorted.forEach(function(row) {
+    var vals = row.valores || {};
+    var cells = [];
+    if (tieneCanal)  cells.push(row.canal  || '');
+    if (tieneRegion) cells.push(row.region || '');
+    if (tieneZona)   cells.push(row.zona   || '');
+    cells.push(row.sucursal || '', row.nombre || '');
+    cols.forEach(function(c) {
+      var pct = vals[c];
+      if (pct === undefined || pct === null) { cells.push(''); return; }
+      var div = getDivisor(c);
+      // Convertir % almacenado de vuelta a puntuación bruta (ej. 80% con divisor 5 → 4)
+      var raw = Math.round((pct / 100) * div * 10) / 10;
+      cells.push(raw);
+    });
+    cells.push(row.nota || '');
+    lines.push(cells.map(csvCell).join(','));
+  });
+
+  var prog_label = prog === 'bdo' ? 'BDO' : '4x4';
+  var filename = 'Ferco_' + ADMIN_PAIS + '_' + prog_label + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+
+  // BOM UTF-8 para que Excel abra tildes/ñ correctamente
+  var bom = '﻿';
+  var blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Descargando ' + filename, 'success');
+}
