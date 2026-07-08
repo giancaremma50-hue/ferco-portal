@@ -337,6 +337,14 @@ function renderResumen() {
   if (!sems.length) { document.getElementById('tab_resumen').innerHTML='<p style="padding:20px;color:var(--muted)">Selecciona al menos un mes con datos.</p>'; return; }
 
   function thSems() { var h=''; for(var i=0;i<sems.length;i++) h+='<th class="th-sem sem-sep">Semana '+sems[i]+'</th>'; return h; }
+  // Pre-computar colaboradores por sucursal desde datos en vivo (para acumular en semCells)
+  var colabsPerSuc = {};
+  var _vrows = state.prog === 'bdo' ? (DATA.bdo || []) : (DATA.x4x || []);
+  for (var _ri = 0; _ri < _vrows.length; _ri++) {
+    var _suc = _vrows[_ri].sucursal;
+    if (_suc) colabsPerSuc[_suc] = (colabsPerSuc[_suc] || 0) + 1;
+  }
+
   function semCells(sucs) {
     var h='';
     for (var i=0;i<sems.length;i++) {
@@ -350,9 +358,15 @@ function renderResumen() {
             for(var ki=0;ki<ks2.length;ki++){if((sd[ks2[ki]]||0)>0){actSet[sucs[si]]=true;break;}} }
         }
       }
-      var act=Object.keys(actSet).length, tot=sucs.length;
-      var pct=tot?Math.round(act/tot*100):0;
-      h+='<td class="sem-sep"><span class="pill '+sc(pct)+'">'+act+'/'+tot+'</span></td>';
+      // Acumular colaboradores: si la sucursal estuvo activa suma todos sus colabs
+      var actColabs=0, totColabs=0;
+      for (var si=0;si<sucs.length;si++) {
+        var cnt=colabsPerSuc[sucs[si]]||0;
+        totColabs+=cnt;
+        if (actSet[sucs[si]]) actColabs+=cnt;
+      }
+      var pct=totColabs?Math.round(actColabs/totColabs*100):0;
+      h+='<td class="sem-sep"><span class="pill '+sc(pct)+'">'+actColabs+'/'+totColabs+'</span></td>';
     }
     return h;
   }
