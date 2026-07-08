@@ -305,8 +305,12 @@ function buildHier() {
   var data = ad(), map = {};
   for (var i = 0; i < data.length; i++) {
     var r = data[i]; if (!isV(r.sucursal)) continue;
-    var reg = r.region, zona = r.zona; if (!reg) continue;
-    if (reg === 'Juan Manuel' && zona === 'Eva') {
+    var reg = r.region, zona = r.zona;
+    // Filas sin región → grupo especial visible en lugar de ignorarlas
+    if (!reg) reg = 'Sin Región';
+    // Normalizar zona vacía para evitar clave "undefined" en el mapa
+    var zonaKey = (zona && zona.trim()) ? zona : 'Sin Zona';
+    if (reg === 'Juan Manuel' && zonaKey === 'Eva') {
       if (!map['Eva']) map['Eva'] = { rows:[], zonas:{}, sBZ:{}, eva:true };
       map['Eva'].rows.push(r);
       if (!map['Eva'].zonas['Eva']) map['Eva'].zonas['Eva'] = [];
@@ -318,11 +322,11 @@ function buildHier() {
     } else {
       if (!map[reg]) map[reg] = { rows:[], zonas:{}, sBZ:{} };
       map[reg].rows.push(r);
-      if (!map[reg].zonas[zona]) map[reg].zonas[zona] = [];
-      map[reg].zonas[zona].push(r);
-      if (!map[reg].sBZ[zona]) map[reg].sBZ[zona] = {};
-      if (!map[reg].sBZ[zona][r.sucursal]) map[reg].sBZ[zona][r.sucursal] = [];
-      map[reg].sBZ[zona][r.sucursal].push(r);
+      if (!map[reg].zonas[zonaKey]) map[reg].zonas[zonaKey] = [];
+      map[reg].zonas[zonaKey].push(r);
+      if (!map[reg].sBZ[zonaKey]) map[reg].sBZ[zonaKey] = {};
+      if (!map[reg].sBZ[zonaKey][r.sucursal]) map[reg].sBZ[zonaKey][r.sucursal] = [];
+      map[reg].sBZ[zonaKey][r.sucursal].push(r);
     }
   }
   return map;
