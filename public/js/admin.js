@@ -1476,48 +1476,38 @@ function descargarExcel() {
     return s !== 0 ? s : (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' });
   });
 
-  var html = '<?xml version="1.0" encoding="UTF-8"?>'
-    + '<?mso-application progid="Excel.Sheet"?>'
-    + '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"'
-    + ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'
-    + '<Styles>'
-    + '<Style ss:ID="h"><Font ss:Bold="1"/><Interior ss:Color="#1e3a5f" ss:Pattern="Solid"/><Font ss:Color="#FFFFFF" ss:Bold="1"/></Style>'
-    + '</Styles>'
-    + '<Worksheet ss:Name="Datos"><Table>';
+  // Tabla HTML — Excel la abre directamente en columnas sin necesidad de parseo
+  var html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">'
+    + '<head><meta charset="UTF-8"></head><body><table border="1">';
 
   // Fila de encabezados
-  html += '<Row>';
+  html += '<tr>';
   headers.forEach(function(h) {
-    html += '<Cell ss:StyleID="h"><Data ss:Type="String">' + esc(h) + '</Data></Cell>';
+    html += '<th style="background:#1e3a5f;color:#fff;font-weight:bold">' + esc(h) + '</th>';
   });
-  html += '</Row>';
+  html += '</tr>';
 
   // Filas de datos
   sorted.forEach(function(row) {
     var vals = row.valores || {};
-    var cells = [];
-    if (tieneCanal)  cells.push({ v: row.canal  || '', t: 'String' });
-    if (tieneRegion) cells.push({ v: row.region || '', t: 'String' });
-    if (tieneZona)   cells.push({ v: row.zona   || '', t: 'String' });
-    cells.push({ v: row.sucursal || '', t: 'String' });
-    cells.push({ v: row.nombre   || '', t: 'String' });
+    html += '<tr>';
+    if (tieneCanal)  html += '<td>' + esc(row.canal  || '') + '</td>';
+    if (tieneRegion) html += '<td>' + esc(row.region || '') + '</td>';
+    if (tieneZona)   html += '<td>' + esc(row.zona   || '') + '</td>';
+    html += '<td>' + esc(row.sucursal || '') + '</td>';
+    html += '<td>' + esc(row.nombre   || '') + '</td>';
     cols.forEach(function(c) {
       var pct = vals[c];
-      if (pct === undefined || pct === null) { cells.push({ v: '', t: 'String' }); return; }
+      if (pct === undefined || pct === null) { html += '<td></td>'; return; }
       var div = getDivisor(c);
       var raw = Math.round((pct / 100) * div * 10) / 10;
-      cells.push({ v: raw, t: 'Number' });
+      html += '<td>' + raw + '</td>';
     });
-    cells.push({ v: row.nota || '', t: 'String' });
-
-    html += '<Row>';
-    cells.forEach(function(c) {
-      html += '<Cell><Data ss:Type="' + c.t + '">' + esc(c.v) + '</Data></Cell>';
-    });
-    html += '</Row>';
+    html += '<td>' + esc(row.nota || '') + '</td>';
+    html += '</tr>';
   });
 
-  html += '</Table></Worksheet></Workbook>';
+  html += '</table></body></html>';
 
   var prog_label = prog === 'bdo' ? 'BDO' : '4x4';
   var filename = 'Ferco_' + ADMIN_PAIS + '_' + prog_label + '_' + new Date().toISOString().slice(0, 10) + '.xls';
