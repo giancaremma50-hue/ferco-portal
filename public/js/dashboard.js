@@ -256,29 +256,48 @@ function hAvgK(cortes, sucs, k) {
   }
   return vals.length ? Math.round(vals.reduce(function(a,b){ return a+b; }, 0) / vals.length) : 0;
 }
+/* REGLAS ANTERIORES — PROMEDIO (preservadas para revertir)
 function hm1(cortes, sucs) { return state.prog==='bdo' ? hAvgK(cortes,sucs,'bdo_qr') : hAvgK(cortes,sucs,'4x4_s1'); }
 function hm2(cortes, sucs) { return state.prog==='bdo' ? hAvgK(cortes,sucs,'bdo_video') : hAvgK(cortes,sucs,'4x4_s2'); }
 function hActQR(sucs) {
-  var cortes = (DATA.historico && DATA.historico.cortes) || [];
-  var last = cortes[cortes.length-1], vals = [];
-  for (var i = 0; i < sucs.length; i++) { var sd = last.sucursales[sucs[i]]; if(sd && sd.bdo_qr!=null) vals.push(sd.bdo_qr); }
-  return vals.length ? Math.round(vals.reduce(function(a,b){ return a+b; }, 0) / vals.length) : 0;
+  var cortes=(DATA.historico&&DATA.historico.cortes)||[],last=cortes[cortes.length-1],vals=[];
+  for(var i=0;i<sucs.length;i++){var sd=last.sucursales[sucs[i]];if(sd&&sd.bdo_qr!=null)vals.push(sd.bdo_qr);}
+  return vals.length?Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length):0;
 }
 function hActVideo(sucs) {
-  var cortes = (DATA.historico && DATA.historico.cortes) || [];
-  var last = cortes[cortes.length-1], vals = [];
-  for (var i = 0; i < sucs.length; i++) { var sd = last.sucursales[sucs[i]]; if(sd && sd.bdo_video!=null) vals.push(sd.bdo_video); }
-  return vals.length ? Math.round(vals.reduce(function(a,b){ return a+b; }, 0) / vals.length) : 0;
+  var cortes=(DATA.historico&&DATA.historico.cortes)||[],last=cortes[cortes.length-1],vals=[];
+  for(var i=0;i<sucs.length;i++){var sd=last.sucursales[sucs[i]];if(sd&&sd.bdo_video!=null)vals.push(sd.bdo_video);}
+  return vals.length?Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length):0;
 }
 function hActSes(sucs) {
-  var cortes = (DATA.historico && DATA.historico.cortes) || [];
-  var last = cortes[cortes.length-1], vals = [];
-  for (var i = 0; i < sucs.length; i++) {
-    var sd = last.sucursales[sucs[i]];
-    if (sd) { var ks = Object.keys(sd).filter(function(k){ return k.indexOf('4x4_s')===0; });
-      for (var j = 0; j < ks.length; j++) { if(sd[ks[j]]>0) vals.push(sd[ks[j]]); } }
+  var cortes=(DATA.historico&&DATA.historico.cortes)||[],last=cortes[cortes.length-1],vals=[];
+  for(var i=0;i<sucs.length;i++){var sd=last.sucursales[sucs[i]];
+    if(sd){var ks=Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;});
+      for(var j=0;j<ks.length;j++){if(sd[ks[j]]>0)vals.push(sd[ks[j]]);}}}
+  return vals.length?Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length):0;
+}
+semCells usaba: Prom.QR + Prom.Video (BDO) o Prom.S1 + Prom.S2 (4x4), colspan=2 por semana
+actCells usaba: hActQR+hActVideo (BDO) o hActSes (4x4), como porcentaje
+actHead: "QR Actual"+"Video Actual" (BDO) o "Sesión Actual" (4x4), rowspan=2 con thSub
+─────────────────────────────────────────────────────────────────────────── */
+
+/* NUEVA REGLA — CONTEO DE PARTICIPACIÓN
+   semanas históricas : X/Y sucursales con al menos 1 valor > 0 en esa semana
+   columna actual     : X/Y colaboradores con al menos 1 valor > 0 (datos en vivo)
+   "participó"        = tiene al menos un campo con valor > 0 en el programa activo  */
+function partColabs(sucList) {
+  var rows = state.prog === 'bdo' ? (DATA.bdo || []) : (DATA.x4x || []);
+  var total = 0, activos = 0;
+  var sucSet = {};
+  for (var i = 0; i < sucList.length; i++) sucSet[sucList[i]] = true;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (!sucSet[r.sucursal]) continue;
+    total++;
+    var vals = r.valores || {}, ks = Object.keys(vals);
+    for (var j = 0; j < ks.length; j++) { if ((vals[ks[j]] || 0) > 0) { activos++; break; } }
   }
-  return vals.length ? Math.round(vals.reduce(function(a,b){ return a+b; }, 0) / vals.length) : 0;
+  return { activos: activos, total: total };
 }
 
 /* ── Jerarquía GT ── */
@@ -317,22 +336,31 @@ function renderResumen() {
   var isBdo = state.prog === 'bdo', l1 = isBdo?'QR':'S1', l2 = isBdo?'Video':'S2';
   if (!sems.length) { document.getElementById('tab_resumen').innerHTML='<p style="padding:20px;color:var(--muted)">Selecciona al menos un mes con datos.</p>'; return; }
 
-  function thSems() { var h=''; for(var i=0;i<sems.length;i++) h+='<th class="th-sem sem-sep" colspan="2">S'+sems[i]+'</th>'; return h; }
-  function thSub()  { var h=''; for(var i=0;i<sems.length;i++) h+='<th class="th-sub sem-sep">Prom.'+l1+'</th><th class="th-sub">Prom.'+l2+'</th>'; return h; }
+  function thSems() { var h=''; for(var i=0;i<sems.length;i++) h+='<th class="th-sem sem-sep">Semana '+sems[i]+'</th>'; return h; }
   function semCells(sucs) {
     var h='';
-    for (var i=0;i<sems.length;i++) { var cv=mmA[sems[i]],v1=hm1(cv,sucs),v2=hm2(cv,sucs);
-      h+='<td class="sem-sep"><span class="pill '+sc(v1)+'">'+v1+'%</span></td><td><span class="pill '+sc(v2)+'">'+v2+'%</span></td>'; }
+    for (var i=0;i<sems.length;i++) {
+      var cv=mmA[sems[i]], actSet={};
+      for (var ci=0;ci<cv.length;ci++) {
+        var sdata=cv[ci].sucursales;
+        for (var si=0;si<sucs.length;si++) {
+          var sd=sdata[sucs[si]]; if(!sd) continue;
+          if (isBdo) { if((sd.bdo_qr||0)>0||(sd.bdo_video||0)>0) actSet[sucs[si]]=true; }
+          else { var ks2=Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;});
+            for(var ki=0;ki<ks2.length;ki++){if((sd[ks2[ki]]||0)>0){actSet[sucs[si]]=true;break;}} }
+        }
+      }
+      var act=Object.keys(actSet).length, tot=sucs.length;
+      var pct=tot?Math.round(act/tot*100):0;
+      h+='<td class="sem-sep"><span class="pill '+sc(pct)+'">'+act+'/'+tot+'</span></td>';
+    }
     return h;
   }
   function actCells(sucs) {
-    if (isBdo) { var qr=hActQR(sucs),vid=hActVideo(sucs);
-      return '<td class="act"><span class="sv '+ssv(qr)+'">'+qr+'%</span></td><td class="act"><span class="sv '+ssv(vid)+'">'+vid+'%</span></td>'; }
-    var ses=hActSes(sucs);
-    return '<td class="act"><span class="sv '+ssv(ses)+'">'+ses+'%</span></td>';
+    var p=partColabs(sucs), pct=p.total?Math.round(p.activos/p.total*100):0;
+    return '<td class="act"><span class="sv '+ssv(pct)+'">'+p.activos+'/'+p.total+'</span></td>';
   }
-  var actHead = isBdo ? '<th class="act" rowspan="2">QR Actual</th><th class="act" rowspan="2">Video Actual</th>'
-                      : '<th class="act" rowspan="2">Sesión Actual</th>';
+  var actHead = '<th class="act">Participación Actual</th>';
 
   var tbody='', regs=Object.keys(h).sort();
   for (var ri=0;ri<regs.length;ri++) {
@@ -362,8 +390,8 @@ function renderResumen() {
   }
   document.getElementById('tab_resumen').innerHTML =
     '<div class="res-scroll"><table class="res-table"><thead>'
-    +'<tr><th class="fix" rowspan="2">Regional / Zona / Sucursal</th>'+thSems()+actHead+'</tr>'
-    +'<tr>'+thSub()+'</tr></thead><tbody>'+tbody+'</tbody></table></div>';
+    +'<tr><th class="fix">Regional / Zona / Sucursal</th>'+thSems()+actHead+'</tr>'
+    +'</thead><tbody>'+tbody+'</tbody></table></div>';
 }
 
 function tgNode(el) {
