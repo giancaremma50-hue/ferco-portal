@@ -1444,7 +1444,7 @@ function copyModalText() {
   showToast('¡Copiado al portapapeles!', 'success');
 }
 
-/* ── Descarga de datos en Excel (CSV con BOM UTF-8) ── */
+/* ── Descarga de datos en Excel (.xls tabla HTML) ── */
 function descargarExcel() {
   if (!ADMIN_DATA) return;
 
@@ -1465,17 +1465,10 @@ function descargarExcel() {
   cols.forEach(function(c) { headers.push(c); });
   headers.push('Nota');
 
-  var SEP = ';';
-
-  function csvCell(v) {
-    var s = (v === null || v === undefined) ? '' : String(v);
-    if (s.indexOf(SEP) !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
-      s = '"' + s.replace(/"/g, '""') + '"';
-    }
-    return s;
+  function esc(v) {
+    return String(v === null || v === undefined ? '' : v)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
-
-  var lines = [headers.map(csvCell).join(SEP)];
 
   // Ordenar igual que el grid: sucursal → nombre
   var sorted = allRows.slice().sort(function(a, b) {
@@ -1483,31 +1476,53 @@ function descargarExcel() {
     return s !== 0 ? s : (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' });
   });
 
+  var html = '<?xml version="1.0" encoding="UTF-8"?>'
+    + '<?mso-application progid="Excel.Sheet"?>'
+    + '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"'
+    + ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'
+    + '<Styles>'
+    + '<Style ss:ID="h"><Font ss:Bold="1"/><Interior ss:Color="#1e3a5f" ss:Pattern="Solid"/><Font ss:Color="#FFFFFF" ss:Bold="1"/></Style>'
+    + '</Styles>'
+    + '<Worksheet ss:Name="Datos"><Table>';
+
+  // Fila de encabezados
+  html += '<Row>';
+  headers.forEach(function(h) {
+    html += '<Cell ss:StyleID="h"><Data ss:Type="String">' + esc(h) + '</Data></Cell>';
+  });
+  html += '</Row>';
+
+  // Filas de datos
   sorted.forEach(function(row) {
     var vals = row.valores || {};
     var cells = [];
-    if (tieneCanal)  cells.push(row.canal  || '');
-    if (tieneRegion) cells.push(row.region || '');
-    if (tieneZona)   cells.push(row.zona   || '');
-    cells.push(row.sucursal || '', row.nombre || '');
+    if (tieneCanal)  cells.push({ v: row.canal  || '', t: 'String' });
+    if (tieneRegion) cells.push({ v: row.region || '', t: 'String' });
+    if (tieneZona)   cells.push({ v: row.zona   || '', t: 'String' });
+    cells.push({ v: row.sucursal || '', t: 'String' });
+    cells.push({ v: row.nombre   || '', t: 'String' });
     cols.forEach(function(c) {
       var pct = vals[c];
-      if (pct === undefined || pct === null) { cells.push(''); return; }
+      if (pct === undefined || pct === null) { cells.push({ v: '', t: 'String' }); return; }
       var div = getDivisor(c);
-      // Convertir % almacenado de vuelta a puntuación bruta (ej. 80% con divisor 5 → 4)
       var raw = Math.round((pct / 100) * div * 10) / 10;
-      cells.push(raw);
+      cells.push({ v: raw, t: 'Number' });
     });
-    cells.push(row.nota || '');
-    lines.push(cells.map(csvCell).join(SEP));
+    cells.push({ v: row.nota || '', t: 'String' });
+
+    html += '<Row>';
+    cells.forEach(function(c) {
+      html += '<Cell><Data ss:Type="' + c.t + '">' + esc(c.v) + '</Data></Cell>';
+    });
+    html += '</Row>';
   });
 
-  var prog_label = prog === 'bdo' ? 'BDO' : '4x4';
-  var filename = 'Ferco_' + ADMIN_PAIS + '_' + prog_label + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+  html += '</Table></Worksheet></Workbook>';
 
-  // BOM UTF-8 para que Excel abra tildes/ñ correctamente
-  var bom = '﻿';
-  var blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  var prog_label = prog === 'bdo' ? 'BDO' : '4x4';
+  var filename = 'Ferco_' + ADMIN_PAIS + '_' + prog_label + '_' + new Date().toISOString().slice(0, 10) + '.xls';
+
+  var blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
   var url  = URL.createObjectURL(blob);
   var a    = document.createElement('a');
   a.href     = url;
