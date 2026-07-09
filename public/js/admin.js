@@ -1524,10 +1524,15 @@ function descargarExcel() {
   showToast('Descargando ' + filename, 'success');
 }
 
-/* ── Reparar historial: agrega conteos exactos a cortes viejos ─────────────
-   Los snapshots guardados antes del fix solo tenían bdo_qr como % promedio.
-   Esta función los parchea con bdo_qr_n, bdo_video_n, bdo_total, etc.,
-   calculados desde los datos en vivo actuales del admin. ────────────────── */
+/* ── Reparar historial: recalcula conteos de participación en TODOS los cortes ──
+   Los snapshots guardados antes del cambio a "Opción B" (requiere TODOS los
+   módulos activos > 0, no solo alguno) quedaron con bdo_qr_n/bdo_video_n/4x4_n
+   inflados. Como esos snapshots nunca guardaron el detalle por colaborador de
+   esa fecha (solo el conteo agregado), no hay forma de recalcular el valor
+   exacto histórico — esta función fuerza el recálculo de TODOS los cortes
+   (no solo los que les falte el campo) usando el estado actual de cada
+   colaborador como aproximación, aplicando la regla vigente de forma
+   consistente en todo el histórico. ──────────────────────────────────────── */
 function repairHistorico() {
   if (!ADMIN_DATA) { showToast('Carga datos primero', 'error'); return; }
   var cortes = (ADMIN_DATA.historico && ADMIN_DATA.historico.cortes) || [];
@@ -1569,17 +1574,19 @@ function repairHistorico() {
       var bdoRows = bdoBySuc[suc] || [];
       var x4xRows = x4xBySuc[suc] || [];
 
-      // Solo parchea el bloque que falte; un snapshot puede tener bdo pero no 4x4 o viceversa.
-      var needsBdo = bdoRows.length && entry.bdo_total === undefined;
-      var needs4x4 = x4xRows.length && entry['4x4_total'] === undefined;
-      if (!needsBdo && !needs4x4) return;
+      // Un snapshot puede tener bdo pero no 4x4 o viceversa; se detecta por los
+      // campos promedio (bdo_qr / 4x4_s1), que siempre se guardaron aunque el
+      // conteo exacto (_n) no existiera todavía.
+      var hasBdo  = entry.bdo_qr    !== undefined && bdoRows.length;
+      var has4x4  = entry['4x4_s1'] !== undefined && x4xRows.length;
+      if (!hasBdo && !has4x4) return;
 
-      if (needsBdo) {
+      if (hasBdo) {
         entry.bdo_total   = bdoRows.length;
         if (qrCols.length)  { entry.bdo_qr_n    = countPart(bdoRows, qrCols);  }
         if (vidCols.length) { entry.bdo_video_n  = countPart(bdoRows, vidCols); }
       }
-      if (needs4x4) {
+      if (has4x4) {
         entry['4x4_total'] = x4xRows.length;
         entry['4x4_n']     = countPart(x4xRows, sesCols);
       }
@@ -1588,10 +1595,10 @@ function repairHistorico() {
   });
 
   if (patched === 0) {
-    showToast('Todos los cortes ya tienen formato nuevo ✓', 'success');
+    showToast('No hay cortes con datos de BDO/4x4 para recalcular', 'success');
     return;
   }
 
-  showToast('Reparando ' + patched + ' entradas...', 'info');
+  showToast('Recalculando ' + patched + ' entradas con la regla vigente...', 'info');
   saveData(); // persiste el historial reparado + genera nuevo corte actual
 }
