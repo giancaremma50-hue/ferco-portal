@@ -430,8 +430,8 @@ function renderResumen() {
       }
       var qrAvg = Math.round(qrSum/n), vidAvg = Math.round(vidSum/n);
       var qrP = tot ? Math.round(qrAvg/tot*100) : 0, vidP = tot ? Math.round(vidAvg/tot*100) : 0;
-      return '<td class="act"><span class="sv '+ssv(qrP)+'">'+qrAvg+'/'+tot+'</span></td>'
-           + '<td class="act"><span class="sv '+ssv(vidP)+'">'+vidAvg+'/'+tot+'</span></td>';
+      return '<td class="act"><span class="sv '+ssv(qrP)+'">'+qrAvg+'/'+tot+'</span><div class="sv-pct">'+qrP+'%</div></td>'
+           + '<td class="act"><span class="sv '+ssv(vidP)+'">'+vidAvg+'/'+tot+'</span><div class="sv-pct">'+vidP+'%</div></td>';
     }
     var anySum = 0;
     for (var i = 0; i < sems.length; i++) {
@@ -443,7 +443,7 @@ function renderResumen() {
       anySum += semAny;
     }
     var anyAvg = Math.round(anySum/n), pct = tot ? Math.round(anyAvg/tot*100) : 0;
-    return '<td class="act"><span class="sv '+ssv(pct)+'">'+anyAvg+'/'+tot+'</span></td>';
+    return '<td class="act"><span class="sv '+ssv(pct)+'">'+anyAvg+'/'+tot+'</span><div class="sv-pct">'+pct+'%</div></td>';
   }
 
   var actHead = isBdo
