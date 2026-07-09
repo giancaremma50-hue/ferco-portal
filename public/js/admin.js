@@ -1523,3 +1523,68 @@ function descargarExcel() {
   URL.revokeObjectURL(url);
   showToast('Descargando ' + filename, 'success');
 }
+
+/* ── Reparar historial: agrega conteos exactos a cortes viejos ─────────────
+   Los snapshots guardados antes del fix solo tenían bdo_qr como % promedio.
+   Esta función los parchea con bdo_qr_n, bdo_video_n, bdo_total, etc.,
+   calculados desde los datos en vivo actuales del admin. ────────────────── */
+function repairHistorico() {
+  if (!ADMIN_DATA) { showToast('Carga datos primero', 'error'); return; }
+  var cortes = (ADMIN_DATA.historico && ADMIN_DATA.historico.cortes) || [];
+  if (!cortes.length) { showToast('No hay historial que reparar'); return; }
+
+  var cfg     = ADMIN_DATA.config || {};
+  var qrCols  = (cfg.bdoCols && cfg.bdoCols.qr)    || [];
+  var vidCols = (cfg.bdoCols && cfg.bdoCols.video)  || [];
+  var sesCols = cfg.sesCols || [];
+
+  function countPart(rows, keys) {
+    return rows.filter(function(r) {
+      return keys.some(function(k) { return parseFloat((r.valores && r.valores[k]) || 0) > 0; });
+    }).length;
+  }
+
+  // Indexar filas actuales por sucursal (una sola vez)
+  var bdoBySuc = {}, x4xBySuc = {};
+  (ADMIN_DATA.bdo || []).forEach(function(r) {
+    if (!r.sucursal) return;
+    if (!bdoBySuc[r.sucursal]) bdoBySuc[r.sucursal] = [];
+    bdoBySuc[r.sucursal].push(r);
+  });
+  (ADMIN_DATA.x4x || []).forEach(function(r) {
+    if (!r.sucursal) return;
+    if (!x4xBySuc[r.sucursal]) x4xBySuc[r.sucursal] = [];
+    x4xBySuc[r.sucursal].push(r);
+  });
+
+  var patched = 0;
+  cortes.forEach(function(corte) {
+    var sucs = Object.keys(corte.sucursales || {});
+    sucs.forEach(function(suc) {
+      var entry = corte.sucursales[suc];
+      if (entry.bdo_total !== undefined) return; // ya tiene formato nuevo
+
+      var bdoRows = bdoBySuc[suc] || [];
+      var x4xRows = x4xBySuc[suc] || [];
+
+      if (bdoRows.length) {
+        entry.bdo_total   = bdoRows.length;
+        if (qrCols.length)  { entry.bdo_qr_n    = countPart(bdoRows, qrCols);  }
+        if (vidCols.length) { entry.bdo_video_n  = countPart(bdoRows, vidCols); }
+      }
+      if (x4xRows.length) {
+        entry['4x4_total'] = x4xRows.length;
+        entry['4x4_n']     = countPart(x4xRows, sesCols);
+      }
+      patched++;
+    });
+  });
+
+  if (patched === 0) {
+    showToast('Todos los cortes ya tienen formato nuevo ✓', 'success');
+    return;
+  }
+
+  showToast('Reparando ' + patched + ' entradas...', 'info');
+  saveData(); // persiste el historial reparado + genera nuevo corte actual
+}
