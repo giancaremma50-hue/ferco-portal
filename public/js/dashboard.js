@@ -305,8 +305,12 @@ function buildHier() {
   var data = ad(), map = {};
   for (var i = 0; i < data.length; i++) {
     var r = data[i]; if (!isV(r.sucursal)) continue;
-    var reg = r.region, zona = r.zona; if (!reg) continue;
-    if (reg === 'Juan Manuel' && zona === 'Eva') {
+    var reg = r.region, zona = r.zona;
+    // Filas sin región → grupo especial visible en lugar de ignorarlas
+    if (!reg) reg = 'Sin Región';
+    // Normalizar zona vacía para evitar clave "undefined" en el mapa
+    var zonaKey = (zona && zona.trim()) ? zona : 'Sin Zona';
+    if (reg === 'Juan Manuel' && zonaKey === 'Eva') {
       if (!map['Eva']) map['Eva'] = { rows:[], zonas:{}, sBZ:{}, eva:true };
       map['Eva'].rows.push(r);
       if (!map['Eva'].zonas['Eva']) map['Eva'].zonas['Eva'] = [];
@@ -318,11 +322,11 @@ function buildHier() {
     } else {
       if (!map[reg]) map[reg] = { rows:[], zonas:{}, sBZ:{} };
       map[reg].rows.push(r);
-      if (!map[reg].zonas[zona]) map[reg].zonas[zona] = [];
-      map[reg].zonas[zona].push(r);
-      if (!map[reg].sBZ[zona]) map[reg].sBZ[zona] = {};
-      if (!map[reg].sBZ[zona][r.sucursal]) map[reg].sBZ[zona][r.sucursal] = [];
-      map[reg].sBZ[zona][r.sucursal].push(r);
+      if (!map[reg].zonas[zonaKey]) map[reg].zonas[zonaKey] = [];
+      map[reg].zonas[zonaKey].push(r);
+      if (!map[reg].sBZ[zonaKey]) map[reg].sBZ[zonaKey] = {};
+      if (!map[reg].sBZ[zonaKey][r.sucursal]) map[reg].sBZ[zonaKey][r.sucursal] = [];
+      map[reg].sBZ[zonaKey][r.sucursal].push(r);
     }
   }
   return map;
@@ -336,45 +340,123 @@ function renderResumen() {
   var isBdo = state.prog === 'bdo', l1 = isBdo?'QR':'S1', l2 = isBdo?'Video':'S2';
   if (!sems.length) { document.getElementById('tab_resumen').innerHTML='<p style="padding:20px;color:var(--muted)">Selecciona al menos un mes con datos.</p>'; return; }
 
-  function thSems() { var h=''; for(var i=0;i<sems.length;i++) h+='<th class="th-sem sem-sep">Semana '+sems[i]+'</th>'; return h; }
-  // Pre-computar colaboradores por sucursal desde datos en vivo (para acumular en semCells)
+  // Pre-computar colaboradores por sucursal desde datos en vivo
   var colabsPerSuc = {};
   var _vrows = state.prog === 'bdo' ? (DATA.bdo || []) : (DATA.x4x || []);
   for (var _ri = 0; _ri < _vrows.length; _ri++) {
     var _suc = _vrows[_ri].sucursal;
     if (_suc) colabsPerSuc[_suc] = (colabsPerSuc[_suc] || 0) + 1;
   }
+  var _qrCols  = (DATA.config && DATA.config.bdoCols && DATA.config.bdoCols.qr)    || [];
+  var _vidCols = (DATA.config && DATA.config.bdoCols && DATA.config.bdoCols.video)  || [];
 
+  // Encabezados — BDO: colspan=2 por semana; 4x4: colspan=1
+  function thSems() {
+    var h='', cs=isBdo?2:1;
+    for(var i=0;i<sems.length;i++) h+='<th class="th-sem sem-sep" colspan="'+cs+'">Semana '+sems[i]+'</th>';
+    return h;
+  }
+  function thSub() {
+    if (!isBdo) return '';
+    var h='';
+    for(var i=0;i<sems.length;i++) h+='<th class="th-sub sem-sep">QR</th><th class="th-sub">Video</th>';
+    h+='<th class="th-sub act">QR</th><th class="th-sub act">Video</th>';
+    return h;
+  }
+
+  // Celdas históricas por semana
   function semCells(sucs) {
     var h='';
     for (var i=0;i<sems.length;i++) {
-      var cv=mmA[sems[i]], actSet={};
+      var cv=mmA[sems[i]], qrSet={}, vidSet={}, anySet={};
       for (var ci=0;ci<cv.length;ci++) {
         var sdata=cv[ci].sucursales;
         for (var si=0;si<sucs.length;si++) {
           var sd=sdata[sucs[si]]; if(!sd) continue;
-          if (isBdo) { if((sd.bdo_qr||0)>0||(sd.bdo_video||0)>0) actSet[sucs[si]]=true; }
-          else { var ks2=Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;});
-            for(var ki=0;ki<ks2.length;ki++){if((sd[ks2[ki]]||0)>0){actSet[sucs[si]]=true;break;}} }
+          if (isBdo) {
+            if((sd.bdo_qr||0)>0)    qrSet[sucs[si]]=true;
+            if((sd.bdo_video||0)>0) vidSet[sucs[si]]=true;
+          } else {
+            var ks2=Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;});
+            for(var ki=0;ki<ks2.length;ki++){if((sd[ks2[ki]]||0)>0){anySet[sucs[si]]=true;break;}}
+          }
         }
       }
-      // Acumular colaboradores: si la sucursal estuvo activa suma todos sus colabs
-      var actColabs=0, totColabs=0;
-      for (var si=0;si<sucs.length;si++) {
-        var cnt=colabsPerSuc[sucs[si]]||0;
-        totColabs+=cnt;
-        if (actSet[sucs[si]]) actColabs+=cnt;
+      if (isBdo) {
+        var qrA=0,vidA=0,tot=0;
+        for(var si=0;si<sucs.length;si++){
+          var cnt=colabsPerSuc[sucs[si]]||0; tot+=cnt;
+          if(qrSet[sucs[si]])  qrA+=cnt;
+          if(vidSet[sucs[si]]) vidA+=cnt;
+        }
+        var qrP=tot?Math.round(qrA/tot*100):0, vidP=tot?Math.round(vidA/tot*100):0;
+        h+='<td class="sem-sep"><span class="pill '+sc(qrP)+'">'+qrA+'/'+tot+'</span></td>';
+        h+='<td><span class="pill '+sc(vidP)+'">'+vidA+'/'+tot+'</span></td>';
+      } else {
+        var actC=0,totC=0;
+        for(var si=0;si<sucs.length;si++){
+          var cnt=colabsPerSuc[sucs[si]]||0; totC+=cnt;
+          if(anySet[sucs[si]]) actC+=cnt;
+        }
+        var pct=totC?Math.round(actC/totC*100):0;
+        h+='<td class="sem-sep"><span class="pill '+sc(pct)+'">'+actC+'/'+totC+'</span></td>';
       }
-      var pct=totColabs?Math.round(actColabs/totColabs*100):0;
-      h+='<td class="sem-sep"><span class="pill '+sc(pct)+'">'+actColabs+'/'+totColabs+'</span></td>';
     }
     return h;
   }
+
+  // Celdas de promedio de participación histórica por semana
   function actCells(sucs) {
-    var p=partColabs(sucs), pct=p.total?Math.round(p.activos/p.total*100):0;
-    return '<td class="act"><span class="sv '+ssv(pct)+'">'+p.activos+'/'+p.total+'</span></td>';
+    var n=sems.length;
+    if(!n) return isBdo?'<td class="act">—</td><td class="act">—</td>':'<td class="act">—</td>';
+    var tot=0;
+    for(var si=0;si<sucs.length;si++) tot+=colabsPerSuc[sucs[si]]||0;
+    if(isBdo){
+      var qrSum=0,vidSum=0;
+      for(var i=0;i<sems.length;i++){
+        var cv=mmA[sems[i]],qrSet={},vidSet={};
+        for(var ci=0;ci<cv.length;ci++){
+          var sdata=cv[ci].sucursales;
+          for(var si=0;si<sucs.length;si++){
+            var sd=sdata[sucs[si]]; if(!sd) continue;
+            if((sd.bdo_qr||0)>0)    qrSet[sucs[si]]=true;
+            if((sd.bdo_video||0)>0) vidSet[sucs[si]]=true;
+          }
+        }
+        for(var si=0;si<sucs.length;si++){
+          var cnt=colabsPerSuc[sucs[si]]||0;
+          if(qrSet[sucs[si]])  qrSum+=cnt;
+          if(vidSet[sucs[si]]) vidSum+=cnt;
+        }
+      }
+      var qrAvg=Math.round(qrSum/n), vidAvg=Math.round(vidSum/n);
+      var qrP=tot?Math.round(qrAvg/tot*100):0, vidP=tot?Math.round(vidAvg/tot*100):0;
+      return '<td class="act"><span class="sv '+ssv(qrP)+'">'+qrAvg+'/'+tot+'</span></td>'
+           + '<td class="act"><span class="sv '+ssv(vidP)+'">'+vidAvg+'/'+tot+'</span></td>';
+    }
+    var anySum=0;
+    for(var i=0;i<sems.length;i++){
+      var cv=mmA[sems[i]],anySet={};
+      for(var ci=0;ci<cv.length;ci++){
+        var sdata=cv[ci].sucursales;
+        for(var si=0;si<sucs.length;si++){
+          var sd=sdata[sucs[si]]; if(!sd) continue;
+          var ks2=Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;});
+          for(var ki=0;ki<ks2.length;ki++){if((sd[ks2[ki]]||0)>0){anySet[sucs[si]]=true;break;}}
+        }
+      }
+      for(var si=0;si<sucs.length;si++){
+        var cnt=colabsPerSuc[sucs[si]]||0;
+        if(anySet[sucs[si]]) anySum+=cnt;
+      }
+    }
+    var anyAvg=Math.round(anySum/n), pct=tot?Math.round(anyAvg/tot*100):0;
+    return '<td class="act"><span class="sv '+ssv(pct)+'">'+anyAvg+'/'+tot+'</span></td>';
   }
-  var actHead = '<th class="act">Participación Actual</th>';
+
+  var actHead = isBdo
+    ? '<th class="act" colspan="2">Prom. Participación</th>'
+    : '<th class="act">Prom. Participación</th>';
 
   var tbody='', regs=Object.keys(h).sort();
   for (var ri=0;ri<regs.length;ri++) {
@@ -402,9 +484,11 @@ function renderResumen() {
         for (var si=0;si<zSucs.length;si++) {var suc=zSucs[si];
           tbody+='<tr class="srow" id="tr_s_'+zk2+'_'+suc.replace(/\W/g,'_')+'" data-par="'+zk2+'"><td class="fix">'+suc+'</td>'+semCells([suc])+actCells([suc])+'</tr>';}}}
   }
+  var subRow = isBdo ? ('<tr>'+thSub()+'</tr>') : '';
   document.getElementById('tab_resumen').innerHTML =
     '<div class="res-scroll"><table class="res-table"><thead>'
-    +'<tr><th class="fix">Regional / Zona / Sucursal</th>'+thSems()+actHead+'</tr>'
+    +'<tr><th class="fix"'+(isBdo?' rowspan="2"':'')+'>Regional / Zona / Sucursal</th>'+thSems()+actHead+'</tr>'
+    +subRow
     +'</thead><tbody>'+tbody+'</tbody></table></div>';
 }
 
