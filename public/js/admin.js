@@ -1562,17 +1562,20 @@ function repairHistorico() {
     var sucs = Object.keys(corte.sucursales || {});
     sucs.forEach(function(suc) {
       var entry = corte.sucursales[suc];
-      if (entry.bdo_total !== undefined) return; // ya tiene formato nuevo
-
       var bdoRows = bdoBySuc[suc] || [];
       var x4xRows = x4xBySuc[suc] || [];
 
-      if (bdoRows.length) {
+      // Solo parchea el bloque que falte; un snapshot puede tener bdo pero no 4x4 o viceversa.
+      var needsBdo = bdoRows.length && entry.bdo_total === undefined;
+      var needs4x4 = x4xRows.length && entry['4x4_total'] === undefined;
+      if (!needsBdo && !needs4x4) return;
+
+      if (needsBdo) {
         entry.bdo_total   = bdoRows.length;
         if (qrCols.length)  { entry.bdo_qr_n    = countPart(bdoRows, qrCols);  }
         if (vidCols.length) { entry.bdo_video_n  = countPart(bdoRows, vidCols); }
       }
-      if (x4xRows.length) {
+      if (needs4x4) {
         entry['4x4_total'] = x4xRows.length;
         entry['4x4_n']     = countPart(x4xRows, sesCols);
       }
