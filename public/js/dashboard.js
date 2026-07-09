@@ -405,35 +405,58 @@ function renderResumen() {
     return h;
   }
 
-  // Celdas de participación actual (datos en vivo, nivel colaborador)
+  // Celdas de promedio de participación histórica por semana
   function actCells(sucs) {
-    var rows=_vrows, sucSet={};
-    for(var i=0;i<sucs.length;i++) sucSet[sucs[i]]=true;
-    if (isBdo) {
-      var tot=0,qrA=0,vidA=0;
-      for(var i=0;i<rows.length;i++){
-        var r=rows[i]; if(!sucSet[r.sucursal]) continue; tot++;
-        var vals=r.valores||{};
-        for(var j=0;j<_qrCols.length;j++){if((vals[_qrCols[j]]||0)>0){qrA++;break;}}
-        for(var j=0;j<_vidCols.length;j++){if((vals[_vidCols[j]]||0)>0){vidA++;break;}}
+    var n=sems.length;
+    if(!n) return isBdo?'<td class="act">—</td><td class="act">—</td>':'<td class="act">—</td>';
+    var tot=0;
+    for(var si=0;si<sucs.length;si++) tot+=colabsPerSuc[sucs[si]]||0;
+    if(isBdo){
+      var qrSum=0,vidSum=0;
+      for(var i=0;i<sems.length;i++){
+        var cv=mmA[sems[i]],qrSet={},vidSet={};
+        for(var ci=0;ci<cv.length;ci++){
+          var sdata=cv[ci].sucursales;
+          for(var si=0;si<sucs.length;si++){
+            var sd=sdata[sucs[si]]; if(!sd) continue;
+            if((sd.bdo_qr||0)>0)    qrSet[sucs[si]]=true;
+            if((sd.bdo_video||0)>0) vidSet[sucs[si]]=true;
+          }
+        }
+        for(var si=0;si<sucs.length;si++){
+          var cnt=colabsPerSuc[sucs[si]]||0;
+          if(qrSet[sucs[si]])  qrSum+=cnt;
+          if(vidSet[sucs[si]]) vidSum+=cnt;
+        }
       }
-      var qrP=tot?Math.round(qrA/tot*100):0, vidP=tot?Math.round(vidA/tot*100):0;
-      return '<td class="act"><span class="sv '+ssv(qrP)+'">'+qrA+'/'+tot+'</span></td>'
-           + '<td class="act"><span class="sv '+ssv(vidP)+'">'+vidA+'/'+tot+'</span></td>';
+      var qrAvg=Math.round(qrSum/n), vidAvg=Math.round(vidSum/n);
+      var qrP=tot?Math.round(qrAvg/tot*100):0, vidP=tot?Math.round(vidAvg/tot*100):0;
+      return '<td class="act"><span class="sv '+ssv(qrP)+'">'+qrAvg+'/'+tot+'</span></td>'
+           + '<td class="act"><span class="sv '+ssv(vidP)+'">'+vidAvg+'/'+tot+'</span></td>';
     }
-    var tot=0,actA=0;
-    for(var i=0;i<rows.length;i++){
-      var r=rows[i]; if(!sucSet[r.sucursal]) continue; tot++;
-      var vals=r.valores||{},ks=Object.keys(vals);
-      for(var j=0;j<ks.length;j++){if((vals[ks[j]]||0)>0){actA++;break;}}
+    var anySum=0;
+    for(var i=0;i<sems.length;i++){
+      var cv=mmA[sems[i]],anySet={};
+      for(var ci=0;ci<cv.length;ci++){
+        var sdata=cv[ci].sucursales;
+        for(var si=0;si<sucs.length;si++){
+          var sd=sdata[sucs[si]]; if(!sd) continue;
+          var ks2=Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;});
+          for(var ki=0;ki<ks2.length;ki++){if((sd[ks2[ki]]||0)>0){anySet[sucs[si]]=true;break;}}
+        }
+      }
+      for(var si=0;si<sucs.length;si++){
+        var cnt=colabsPerSuc[sucs[si]]||0;
+        if(anySet[sucs[si]]) anySum+=cnt;
+      }
     }
-    var pct=tot?Math.round(actA/tot*100):0;
-    return '<td class="act"><span class="sv '+ssv(pct)+'">'+actA+'/'+tot+'</span></td>';
+    var anyAvg=Math.round(anySum/n), pct=tot?Math.round(anyAvg/tot*100):0;
+    return '<td class="act"><span class="sv '+ssv(pct)+'">'+anyAvg+'/'+tot+'</span></td>';
   }
 
   var actHead = isBdo
-    ? '<th class="act" colspan="2">Participación Actual</th>'
-    : '<th class="act">Participación Actual</th>';
+    ? '<th class="act" colspan="2">Prom. Participación</th>'
+    : '<th class="act">Prom. Participación</th>';
 
   var tbody='', regs=Object.keys(h).sort();
   for (var ri=0;ri<regs.length;ri++) {
