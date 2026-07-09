@@ -70,6 +70,7 @@ tr:hover td { background: var(--primary-light); }
 .xbtn:hover { border-color: var(--primary); color: var(--primary-dark); background: var(--primary-light); }
 .sv { font-size: 14px; font-weight: 700; }
 .sg { color: var(--good); } .sm { color: var(--mid); } .sb { color: var(--bad); } .s0 { color: var(--muted-fg); }
+.sv-pct { font-size: 10px; font-weight: 600; color: var(--muted-fg); margin-top: 2px; }
 .th-sem { background: var(--primary-light) !important; color: var(--focus-text); font-weight: 800; font-size: 12px; }
 .th-sub { font-size: 10px; color: #64748b; }
 .sem-sep { border-left: 2px solid #fcd34d !important; }
