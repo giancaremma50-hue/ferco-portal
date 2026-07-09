@@ -556,15 +556,8 @@ function renderHistorico() {
   if(!cortes.length){document.getElementById('tab_historico').innerHTML='<p style="color:var(--muted-fg);padding:16px">Sin datos para los meses seleccionados.</p>';return;}
   var isBdo=state.prog==='bdo';
 
-  /* Sucursales activas (con histórico) */
-  var sucs;
-  if(cfg('tieneResumen')){
-    sucs=getSucsF();
-  } else {
-    var _ahs=new Set();
-    for(var i=0;i<cortes.length;i++)Object.keys(cortes[i].sucursales||{}).forEach(function(k){if(isV(k))_ahs.add(k);});
-    sucs=[...new Set(ad().map(function(r){return r.sucursal;}).filter(isV))].filter(function(s){return _ahs.has(s);}).sort();
-  }
+  /* Sucursales activas (con histórico) — respeta filtros activos */
+  var sucs = getSucsF();
 
   var first=cortes[0], last=cortes[cortes.length-1];
   var fi=first.fecha.split('-').reverse().join('/'), ff=last.fecha.split('-').reverse().join('/');
