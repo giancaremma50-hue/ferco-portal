@@ -28,11 +28,6 @@ function buildSnapshot(body) {
     return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
   }
 
-  // Cuenta cuántos colaboradores tienen al menos una columna > 0 en el grupo
-  function countPart(rows, keys) {
-    return rows.filter((row) => keys.some((k) => parseFloat(row.valores?.[k] || 0) > 0)).length;
-  }
-
   const allRows = [...(body.bdo || []), ...(body.x4x || [])];
   const sucNames = [...new Set(allRows.map((r) => r.sucursal).filter(Boolean))];
 
@@ -44,24 +39,11 @@ function buildSnapshot(body) {
     const sesCols = body.config?.sesCols || [];
 
     const entry = {};
-    if (bdoRows.length) {
-      entry.bdo_total = bdoRows.length;
-      if (qrCols.length) {
-        entry.bdo_qr   = avgVals(bdoRows, qrCols);
-        entry.bdo_qr_n = countPart(bdoRows, qrCols);
-      }
-      if (vidCols.length) {
-        entry.bdo_video   = avgVals(bdoRows, vidCols);
-        entry.bdo_video_n = countPart(bdoRows, vidCols);
-      }
-    }
-    if (x4xRows.length) {
-      entry['4x4_total'] = x4xRows.length;
-      entry['4x4_n'] = countPart(x4xRows, sesCols);
-      sesCols.forEach((col, i) => {
-        entry[`4x4_s${i + 1}`] = avgVals(x4xRows, [col]);
-      });
-    }
+    if (bdoRows.length && qrCols.length) entry.bdo_qr = avgVals(bdoRows, qrCols);
+    if (bdoRows.length && vidCols.length) entry.bdo_video = avgVals(bdoRows, vidCols);
+    sesCols.forEach((col, i) => {
+      if (x4xRows.length) entry[`4x4_s${i + 1}`] = avgVals(x4xRows, [col]);
+    });
 
     if (Object.keys(entry).length) sucursales[suc] = entry;
   }
