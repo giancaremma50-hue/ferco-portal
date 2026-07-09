@@ -350,6 +350,30 @@ function renderResumen() {
   var _qrCols  = (DATA.config && DATA.config.bdoCols && DATA.config.bdoCols.qr)    || [];
   var _vidCols = (DATA.config && DATA.config.bdoCols && DATA.config.bdoCols.video)  || [];
 
+  // Si el corte tiene campos _n (nuevo formato) los usa; si no, usa proxy del % > 0.
+  function sucPart(sd, suc) {
+    var cnt = colabsPerSuc[suc] || 0;
+    if (isBdo) {
+      var qr  = sd.bdo_total !== undefined ? (sd.bdo_qr_n  || 0) : ((sd.bdo_qr   || 0) > 0 ? cnt : 0);
+      var vid = sd.bdo_total !== undefined ? (sd.bdo_video_n|| 0) : ((sd.bdo_video|| 0) > 0 ? cnt : 0);
+      return { qr: qr, vid: vid, tot: cnt };
+    }
+    var any = sd['4x4_total'] !== undefined ? (sd['4x4_n'] || 0) : (function() {
+      var ks2 = Object.keys(sd).filter(function(k){ return k.indexOf('4x4_s') === 0; });
+      for (var ki = 0; ki < ks2.length; ki++) { if ((sd[ks2[ki]] || 0) > 0) return cnt; }
+      return 0;
+    }());
+    return { any: any, tot: cnt };
+  }
+
+  // Último corte de la semana cv que tiene datos para esta sucursal
+  function latestSd(cv, suc) {
+    for (var ci = cv.length - 1; ci >= 0; ci--) {
+      if (cv[ci].sucursales[suc]) return cv[ci].sucursales[suc];
+    }
+    return null;
+  }
+
   // Encabezados — BDO: colspan=2 por semana; 4x4: colspan=1
   function thSems() {
     var h='', cs=isBdo?2:1;
@@ -366,91 +390,59 @@ function renderResumen() {
 
   // Celdas históricas por semana
   function semCells(sucs) {
-    var h='';
-    for (var i=0;i<sems.length;i++) {
-      var cv=mmA[sems[i]], qrSet={}, vidSet={}, anySet={};
-      for (var ci=0;ci<cv.length;ci++) {
-        var sdata=cv[ci].sucursales;
-        for (var si=0;si<sucs.length;si++) {
-          var sd=sdata[sucs[si]]; if(!sd) continue;
-          if (isBdo) {
-            if((sd.bdo_qr||0)>0)    qrSet[sucs[si]]=true;
-            if((sd.bdo_video||0)>0) vidSet[sucs[si]]=true;
-          } else {
-            var ks2=Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;});
-            for(var ki=0;ki<ks2.length;ki++){if((sd[ks2[ki]]||0)>0){anySet[sucs[si]]=true;break;}}
-          }
-        }
+    var h = '';
+    for (var i = 0; i < sems.length; i++) {
+      var cv = mmA[sems[i]], qrA = 0, vidA = 0, anyA = 0, tot = 0;
+      for (var si = 0; si < sucs.length; si++) {
+        var suc = sucs[si], sd = latestSd(cv, suc);
+        tot += colabsPerSuc[suc] || 0;
+        if (!sd) continue;
+        var p = sucPart(sd, suc);
+        if (isBdo) { qrA += p.qr; vidA += p.vid; } else { anyA += p.any; }
       }
       if (isBdo) {
-        var qrA=0,vidA=0,tot=0;
-        for(var si=0;si<sucs.length;si++){
-          var cnt=colabsPerSuc[sucs[si]]||0; tot+=cnt;
-          if(qrSet[sucs[si]])  qrA+=cnt;
-          if(vidSet[sucs[si]]) vidA+=cnt;
-        }
-        var qrP=tot?Math.round(qrA/tot*100):0, vidP=tot?Math.round(vidA/tot*100):0;
-        h+='<td class="sem-sep"><span class="pill '+sc(qrP)+'">'+qrA+'/'+tot+'</span></td>';
-        h+='<td><span class="pill '+sc(vidP)+'">'+vidA+'/'+tot+'</span></td>';
+        var qrP = tot ? Math.round(qrA/tot*100) : 0, vidP = tot ? Math.round(vidA/tot*100) : 0;
+        h += '<td class="sem-sep"><span class="pill '+sc(qrP)+'">'+qrA+'/'+tot+'</span></td>';
+        h += '<td><span class="pill '+sc(vidP)+'">'+vidA+'/'+tot+'</span></td>';
       } else {
-        var actC=0,totC=0;
-        for(var si=0;si<sucs.length;si++){
-          var cnt=colabsPerSuc[sucs[si]]||0; totC+=cnt;
-          if(anySet[sucs[si]]) actC+=cnt;
-        }
-        var pct=totC?Math.round(actC/totC*100):0;
-        h+='<td class="sem-sep"><span class="pill '+sc(pct)+'">'+actC+'/'+totC+'</span></td>';
+        var pct = tot ? Math.round(anyA/tot*100) : 0;
+        h += '<td class="sem-sep"><span class="pill '+sc(pct)+'">'+anyA+'/'+tot+'</span></td>';
       }
     }
     return h;
   }
 
-  // Celdas de promedio de participación histórica por semana
+  // Prom. Participación: promedio de conteos exactos por semana
   function actCells(sucs) {
-    var n=sems.length;
-    if(!n) return isBdo?'<td class="act">—</td><td class="act">—</td>':'<td class="act">—</td>';
-    var tot=0;
-    for(var si=0;si<sucs.length;si++) tot+=colabsPerSuc[sucs[si]]||0;
-    if(isBdo){
-      var qrSum=0,vidSum=0;
-      for(var i=0;i<sems.length;i++){
-        var cv=mmA[sems[i]],qrSet={},vidSet={};
-        for(var ci=0;ci<cv.length;ci++){
-          var sdata=cv[ci].sucursales;
-          for(var si=0;si<sucs.length;si++){
-            var sd=sdata[sucs[si]]; if(!sd) continue;
-            if((sd.bdo_qr||0)>0)    qrSet[sucs[si]]=true;
-            if((sd.bdo_video||0)>0) vidSet[sucs[si]]=true;
-          }
+    var n = sems.length;
+    if (!n) return isBdo ? '<td class="act">—</td><td class="act">—</td>' : '<td class="act">—</td>';
+    var tot = 0;
+    for (var si = 0; si < sucs.length; si++) tot += colabsPerSuc[sucs[si]] || 0;
+    if (isBdo) {
+      var qrSum = 0, vidSum = 0;
+      for (var i = 0; i < sems.length; i++) {
+        var cv = mmA[sems[i]], semQr = 0, semVid = 0;
+        for (var si = 0; si < sucs.length; si++) {
+          var sd = latestSd(cv, sucs[si]); if (!sd) continue;
+          var p = sucPart(sd, sucs[si]); semQr += p.qr; semVid += p.vid;
         }
-        for(var si=0;si<sucs.length;si++){
-          var cnt=colabsPerSuc[sucs[si]]||0;
-          if(qrSet[sucs[si]])  qrSum+=cnt;
-          if(vidSet[sucs[si]]) vidSum+=cnt;
-        }
+        qrSum += semQr; vidSum += semVid;
       }
-      var qrAvg=Math.round(qrSum/n), vidAvg=Math.round(vidSum/n);
-      var qrP=tot?Math.round(qrAvg/tot*100):0, vidP=tot?Math.round(vidAvg/tot*100):0;
+      var qrAvg = Math.round(qrSum/n), vidAvg = Math.round(vidSum/n);
+      var qrP = tot ? Math.round(qrAvg/tot*100) : 0, vidP = tot ? Math.round(vidAvg/tot*100) : 0;
       return '<td class="act"><span class="sv '+ssv(qrP)+'">'+qrAvg+'/'+tot+'</span></td>'
            + '<td class="act"><span class="sv '+ssv(vidP)+'">'+vidAvg+'/'+tot+'</span></td>';
     }
-    var anySum=0;
-    for(var i=0;i<sems.length;i++){
-      var cv=mmA[sems[i]],anySet={};
-      for(var ci=0;ci<cv.length;ci++){
-        var sdata=cv[ci].sucursales;
-        for(var si=0;si<sucs.length;si++){
-          var sd=sdata[sucs[si]]; if(!sd) continue;
-          var ks2=Object.keys(sd).filter(function(k){return k.indexOf('4x4_s')===0;});
-          for(var ki=0;ki<ks2.length;ki++){if((sd[ks2[ki]]||0)>0){anySet[sucs[si]]=true;break;}}
-        }
+    var anySum = 0;
+    for (var i = 0; i < sems.length; i++) {
+      var cv = mmA[sems[i]], semAny = 0;
+      for (var si = 0; si < sucs.length; si++) {
+        var sd = latestSd(cv, sucs[si]); if (!sd) continue;
+        semAny += sucPart(sd, sucs[si]).any;
       }
-      for(var si=0;si<sucs.length;si++){
-        var cnt=colabsPerSuc[sucs[si]]||0;
-        if(anySet[sucs[si]]) anySum+=cnt;
-      }
+      anySum += semAny;
     }
-    var anyAvg=Math.round(anySum/n), pct=tot?Math.round(anyAvg/tot*100):0;
+    var anyAvg = Math.round(anySum/n), pct = tot ? Math.round(anyAvg/tot*100) : 0;
     return '<td class="act"><span class="sv '+ssv(pct)+'">'+anyAvg+'/'+tot+'</span></td>';
   }
 
