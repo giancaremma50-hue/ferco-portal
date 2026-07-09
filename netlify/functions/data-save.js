@@ -28,9 +28,11 @@ function buildSnapshot(body) {
     return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
   }
 
-  // Cuenta cuántos colaboradores tienen al menos una columna > 0 en el grupo
+  // Cuenta cuántos colaboradores tienen TODAS las columnas activas > 0
   function countPart(rows, keys) {
-    return rows.filter((row) => keys.some((k) => parseFloat(row.valores?.[k] || 0) > 0)).length;
+    const active = keys.filter(k => rows.some(r => parseFloat(r.valores?.[k] || 0) > 0));
+    if (!active.length) return 0;
+    return rows.filter(r => active.every(k => parseFloat(r.valores?.[k] || 0) > 0)).length;
   }
 
   const allRows = [...(body.bdo || []), ...(body.x4x || [])];
