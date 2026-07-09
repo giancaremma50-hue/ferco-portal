@@ -302,7 +302,7 @@ function partColabs(sucList) {
 
 /* ── Jerarquía GT ── */
 function buildHier() {
-  var data = ad(), map = {};
+  var data = fdRows(), map = {};
   for (var i = 0; i < data.length; i++) {
     var r = data[i]; if (!isV(r.sucursal)) continue;
     var reg = r.region, zona = r.zona;
@@ -340,9 +340,9 @@ function renderResumen() {
   var isBdo = state.prog === 'bdo', l1 = isBdo?'QR':'S1', l2 = isBdo?'Video':'S2';
   if (!sems.length) { document.getElementById('tab_resumen').innerHTML='<p style="padding:20px;color:var(--muted)">Selecciona al menos un mes con datos.</p>'; return; }
 
-  // Pre-computar colaboradores por sucursal desde datos en vivo
+  // Pre-computar colaboradores por sucursal desde datos filtrados
   var colabsPerSuc = {};
-  var _vrows = state.prog === 'bdo' ? (DATA.bdo || []) : (DATA.x4x || []);
+  var _vrows = fdRows();
   for (var _ri = 0; _ri < _vrows.length; _ri++) {
     var _suc = _vrows[_ri].sucursal;
     if (_suc) colabsPerSuc[_suc] = (colabsPerSuc[_suc] || 0) + 1;
@@ -699,9 +699,9 @@ function _applyTabVisibility(tn) {
   /* filtersSection: visible en detalle e historico; en resumen solo si GT */
   var showFilters = tn!=='resumen' || cfg('tieneResumen');
   document.getElementById('filtersSection').style.display = showFilters ? 'block' : 'none';
-  /* filtersMain: oculto en resumen */
+  /* filtersMain: visible siempre */
   var fm=document.getElementById('filtersMain');
-  if(fm) fm.style.display = tn==='resumen' ? 'none' : '';
+  if(fm) fm.style.display = '';
   /* mesRow: historico (todos) o resumen GT */
   var mr=document.getElementById('mesRow');
   if(mr) mr.style.display = (tn==='historico'||(tn==='resumen'&&cfg('tieneResumen'))) ? 'block' : 'none';
