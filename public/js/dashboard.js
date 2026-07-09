@@ -340,30 +340,35 @@ function renderResumen() {
   var isBdo = state.prog === 'bdo', l1 = isBdo?'QR':'S1', l2 = isBdo?'Video':'S2';
   if (!sems.length) { document.getElementById('tab_resumen').innerHTML='<p style="padding:20px;color:var(--muted)">Selecciona al menos un mes con datos.</p>'; return; }
 
-  // Pre-computar colaboradores por sucursal desde datos filtrados
+  // Colaboradores por sucursal — SIEMPRE desde datos completos (sin filtros de canal/search)
+  // para que coincidan con los totales guardados en los snapshots (bdo_total, 4x4_total).
   var colabsPerSuc = {};
-  var _vrows = fdRows();
-  for (var _ri = 0; _ri < _vrows.length; _ri++) {
-    var _suc = _vrows[_ri].sucursal;
+  var _allRows = ad();
+  for (var _ri = 0; _ri < _allRows.length; _ri++) {
+    var _suc = _allRows[_ri].sucursal;
     if (_suc) colabsPerSuc[_suc] = (colabsPerSuc[_suc] || 0) + 1;
   }
   var _qrCols  = (DATA.config && DATA.config.bdoCols && DATA.config.bdoCols.qr)    || [];
   var _vidCols = (DATA.config && DATA.config.bdoCols && DATA.config.bdoCols.video)  || [];
 
-  // Si el corte tiene campos _n (nuevo formato) los usa; si no, usa proxy del % > 0.
+  // sucPart: devuelve { qr, vid, tot } o { any, tot }.
+  // Formato nuevo (bdo_total presente): usa _n y _total del snapshot — numerador y
+  //   denominador del mismo corte, garantiza qr ≤ tot siempre.
+  // Formato viejo (proxy): usa colabsPerSuc como aproximación, igual que antes.
   function sucPart(sd, suc) {
     var cnt = colabsPerSuc[suc] || 0;
     if (isBdo) {
-      var qr  = sd.bdo_total !== undefined ? (sd.bdo_qr_n  || 0) : ((sd.bdo_qr   || 0) > 0 ? cnt : 0);
-      var vid = sd.bdo_total !== undefined ? (sd.bdo_video_n|| 0) : ((sd.bdo_video|| 0) > 0 ? cnt : 0);
-      return { qr: qr, vid: vid, tot: cnt };
+      if (sd.bdo_total !== undefined) {
+        return { qr: sd.bdo_qr_n || 0, vid: sd.bdo_video_n || 0, tot: sd.bdo_total };
+      }
+      return { qr: (sd.bdo_qr || 0) > 0 ? cnt : 0, vid: (sd.bdo_video || 0) > 0 ? cnt : 0, tot: cnt };
     }
-    var any = sd['4x4_total'] !== undefined ? (sd['4x4_n'] || 0) : (function() {
-      var ks2 = Object.keys(sd).filter(function(k){ return k.indexOf('4x4_s') === 0; });
-      for (var ki = 0; ki < ks2.length; ki++) { if ((sd[ks2[ki]] || 0) > 0) return cnt; }
-      return 0;
-    }());
-    return { any: any, tot: cnt };
+    if (sd['4x4_total'] !== undefined) {
+      return { any: sd['4x4_n'] || 0, tot: sd['4x4_total'] };
+    }
+    var ks2 = Object.keys(sd).filter(function(k){ return k.indexOf('4x4_s') === 0; });
+    var anyV = ks2.some(function(k){ return (sd[k] || 0) > 0; }) ? cnt : 0;
+    return { any: anyV, tot: cnt };
   }
 
   // Último corte de la semana cv que tiene datos para esta sucursal
@@ -395,9 +400,9 @@ function renderResumen() {
       var cv = mmA[sems[i]], qrA = 0, vidA = 0, anyA = 0, tot = 0;
       for (var si = 0; si < sucs.length; si++) {
         var suc = sucs[si], sd = latestSd(cv, suc);
-        tot += colabsPerSuc[suc] || 0;
-        if (!sd) continue;
+        if (!sd) { tot += colabsPerSuc[suc] || 0; continue; }
         var p = sucPart(sd, suc);
+        tot += p.tot;  // denominador del mismo snapshot → siempre consistente
         if (isBdo) { qrA += p.qr; vidA += p.vid; } else { anyA += p.any; }
       }
       if (isBdo) {
@@ -413,36 +418,39 @@ function renderResumen() {
   }
 
   // Prom. Participación: promedio de conteos exactos por semana
+  // Denominador = promedio de bdo_total del snapshot por semana (consistente con semCells).
   function actCells(sucs) {
     var n = sems.length;
     if (!n) return isBdo ? '<td class="act">—</td><td class="act">—</td>' : '<td class="act">—</td>';
-    var tot = 0;
-    for (var si = 0; si < sucs.length; si++) tot += colabsPerSuc[sucs[si]] || 0;
     if (isBdo) {
-      var qrSum = 0, vidSum = 0;
+      var qrSum = 0, vidSum = 0, totSum = 0;
       for (var i = 0; i < sems.length; i++) {
-        var cv = mmA[sems[i]], semQr = 0, semVid = 0;
+        var cv = mmA[sems[i]], semQr = 0, semVid = 0, semTot = 0;
         for (var si = 0; si < sucs.length; si++) {
-          var sd = latestSd(cv, sucs[si]); if (!sd) continue;
-          var p = sucPart(sd, sucs[si]); semQr += p.qr; semVid += p.vid;
+          var sd = latestSd(cv, sucs[si]);
+          if (!sd) { semTot += colabsPerSuc[sucs[si]] || 0; continue; }
+          var p = sucPart(sd, sucs[si]); semQr += p.qr; semVid += p.vid; semTot += p.tot;
         }
-        qrSum += semQr; vidSum += semVid;
+        qrSum += semQr; vidSum += semVid; totSum += semTot;
       }
+      var tot = Math.round(totSum/n);
       var qrAvg = Math.round(qrSum/n), vidAvg = Math.round(vidSum/n);
       var qrP = tot ? Math.round(qrAvg/tot*100) : 0, vidP = tot ? Math.round(vidAvg/tot*100) : 0;
       return '<td class="act"><span class="sv '+ssv(qrP)+'">'+qrAvg+'/'+tot+'</span><div class="sv-pct">'+qrP+'%</div></td>'
            + '<td class="act"><span class="sv '+ssv(vidP)+'">'+vidAvg+'/'+tot+'</span><div class="sv-pct">'+vidP+'%</div></td>';
     }
-    var anySum = 0;
+    var anySum = 0, totSum = 0;
     for (var i = 0; i < sems.length; i++) {
-      var cv = mmA[sems[i]], semAny = 0;
+      var cv = mmA[sems[i]], semAny = 0, semTot = 0;
       for (var si = 0; si < sucs.length; si++) {
-        var sd = latestSd(cv, sucs[si]); if (!sd) continue;
-        semAny += sucPart(sd, sucs[si]).any;
+        var sd = latestSd(cv, sucs[si]);
+        if (!sd) { semTot += colabsPerSuc[sucs[si]] || 0; continue; }
+        var p = sucPart(sd, sucs[si]); semAny += p.any; semTot += p.tot;
       }
-      anySum += semAny;
+      anySum += semAny; totSum += semTot;
     }
-    var anyAvg = Math.round(anySum/n), pct = tot ? Math.round(anyAvg/tot*100) : 0;
+    var tot = Math.round(totSum/n), anyAvg = Math.round(anySum/n);
+    var pct = tot ? Math.round(anyAvg/tot*100) : 0;
     return '<td class="act"><span class="sv '+ssv(pct)+'">'+anyAvg+'/'+tot+'</span><div class="sv-pct">'+pct+'%</div></td>';
   }
 
