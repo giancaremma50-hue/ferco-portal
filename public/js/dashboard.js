@@ -350,22 +350,6 @@ function renderResumen() {
   var _qrCols  = (DATA.config && DATA.config.bdoCols && DATA.config.bdoCols.qr)    || [];
   var _vidCols = (DATA.config && DATA.config.bdoCols && DATA.config.bdoCols.video)  || [];
 
-  // Encabezados — BDO: colspan=2 por semana; 4x4: colspan=1
-  function thSems() {
-    var h='', cs=isBdo?2:1;
-    for(var i=0;i<sems.length;i++) h+='<th class="th-sem sem-sep" colspan="'+cs+'">Semana '+sems[i]+'</th>';
-    return h;
-  }
-  function thSub() {
-    if (!isBdo) return '';
-    var h='';
-    for(var i=0;i<sems.length;i++) h+='<th class="th-sub sem-sep">QR</th><th class="th-sub">Video</th>';
-    h+='<th class="th-sub act">QR</th><th class="th-sub act">Video</th>';
-    return h;
-  }
-
-  // Celdas históricas por semana
-  // Extrae conteos de un corte para una sucursal.
   // Si el corte tiene campos _n (nuevo formato) los usa; si no, usa proxy del % > 0.
   function sucPart(sd, suc) {
     var cnt = colabsPerSuc[suc] || 0;
@@ -390,6 +374,21 @@ function renderResumen() {
     return null;
   }
 
+  // Encabezados — BDO: colspan=2 por semana; 4x4: colspan=1
+  function thSems() {
+    var h='', cs=isBdo?2:1;
+    for(var i=0;i<sems.length;i++) h+='<th class="th-sem sem-sep" colspan="'+cs+'">Semana '+sems[i]+'</th>';
+    return h;
+  }
+  function thSub() {
+    if (!isBdo) return '';
+    var h='';
+    for(var i=0;i<sems.length;i++) h+='<th class="th-sub sem-sep">QR</th><th class="th-sub">Video</th>';
+    h+='<th class="th-sub act">QR</th><th class="th-sub act">Video</th>';
+    return h;
+  }
+
+  // Celdas históricas por semana
   function semCells(sucs) {
     var h = '';
     for (var i = 0; i < sems.length; i++) {
