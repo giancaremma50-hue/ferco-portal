@@ -1539,8 +1539,12 @@ function repairHistorico() {
   var sesCols = cfg.sesCols || [];
 
   function countPart(rows, keys) {
+    var active = keys.filter(function(k) {
+      return rows.some(function(r) { return parseFloat((r.valores && r.valores[k]) || 0) > 0; });
+    });
+    if (!active.length) return 0;
     return rows.filter(function(r) {
-      return keys.some(function(k) { return parseFloat((r.valores && r.valores[k]) || 0) > 0; });
+      return active.every(function(k) { return parseFloat((r.valores && r.valores[k]) || 0) > 0; });
     }).length;
   }
 
