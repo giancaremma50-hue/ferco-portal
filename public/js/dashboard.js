@@ -379,6 +379,27 @@ function renderResumen() {
     return null;
   }
 
+  // Promedio (%) real de un campo (bdo_qr / bdo_video) en la semana cv — a
+  // diferencia del recuento de participación, este dato SÍ es confiable en
+  // todas las semanas históricas (nunca tuvo el bug de conteo).
+  function semAvgPct(cv, sucs, field) {
+    var vals = [];
+    for (var i = 0; i < sucs.length; i++) {
+      var sd = latestSd(cv, sucs[i]);
+      if (sd && sd[field] != null) vals.push(sd[field]);
+    }
+    return vals.length ? Math.round(vals.reduce(function(a,b){ return a+b; }, 0) / vals.length) : 0;
+  }
+  // Igual que semAvgPct pero para 4x4, promediando las sesiones de cada sucursal.
+  function semAvgSes(cv, sucs) {
+    var vals = [];
+    for (var i = 0; i < sucs.length; i++) {
+      var sd = latestSd(cv, sucs[i]);
+      if (sd) vals.push(sucSesAvg(sd));
+    }
+    return vals.length ? Math.round(vals.reduce(function(a,b){ return a+b; }, 0) / vals.length) : 0;
+  }
+
   // Encabezados — BDO: colspan=2 por semana; 4x4: colspan=1
   function thSems() {
     var h='', cs=isBdo?2:1;
@@ -407,23 +428,27 @@ function renderResumen() {
       }
       if (isBdo) {
         var qrP = tot ? Math.round(qrA/tot*100) : 0, vidP = tot ? Math.round(vidA/tot*100) : 0;
-        h += '<td class="sem-sep"><span class="pill '+sc(qrP)+'">'+qrA+'/'+tot+'</span></td>';
-        h += '<td><span class="pill '+sc(vidP)+'">'+vidA+'/'+tot+'</span></td>';
+        var qrProm = semAvgPct(cv, sucs, 'bdo_qr'), vidProm = semAvgPct(cv, sucs, 'bdo_video');
+        h += '<td class="sem-sep"><span class="pill '+sc(qrP)+'">'+qrA+'/'+tot+'</span><div class="sv-pct">Prom. '+qrProm+'%</div></td>';
+        h += '<td><span class="pill '+sc(vidP)+'">'+vidA+'/'+tot+'</span><div class="sv-pct">Prom. '+vidProm+'%</div></td>';
       } else {
         var pct = tot ? Math.round(anyA/tot*100) : 0;
-        h += '<td class="sem-sep"><span class="pill '+sc(pct)+'">'+anyA+'/'+tot+'</span></td>';
+        var sesProm = semAvgSes(cv, sucs);
+        h += '<td class="sem-sep"><span class="pill '+sc(pct)+'">'+anyA+'/'+tot+'</span><div class="sv-pct">Prom. '+sesProm+'%</div></td>';
       }
     }
     return h;
   }
 
-  // Prom. Participación: promedio de conteos exactos por semana
+  // Recuento de Participación: promedio de conteos exactos por semana
   // Denominador = promedio de bdo_total del snapshot por semana (consistente con semCells).
+  // Además se muestra el Promedio (%) real — genuino avance histórico, ya que
+  // ese dato nunca tuvo el bug del recuento (ver semAvgPct/semAvgSes).
   function actCells(sucs) {
     var n = sems.length;
     if (!n) return isBdo ? '<td class="act">—</td><td class="act">—</td>' : '<td class="act">—</td>';
     if (isBdo) {
-      var qrSum = 0, vidSum = 0, totSum = 0;
+      var qrSum = 0, vidSum = 0, totSum = 0, qrPromSum = 0, vidPromSum = 0;
       for (var i = 0; i < sems.length; i++) {
         var cv = mmA[sems[i]], semQr = 0, semVid = 0, semTot = 0;
         for (var si = 0; si < sucs.length; si++) {
@@ -432,14 +457,16 @@ function renderResumen() {
           var p = sucPart(sd, sucs[si]); semQr += p.qr; semVid += p.vid; semTot += p.tot;
         }
         qrSum += semQr; vidSum += semVid; totSum += semTot;
+        qrPromSum += semAvgPct(cv, sucs, 'bdo_qr'); vidPromSum += semAvgPct(cv, sucs, 'bdo_video');
       }
       var tot = Math.round(totSum/n);
       var qrAvg = Math.round(qrSum/n), vidAvg = Math.round(vidSum/n);
       var qrP = tot ? Math.round(qrAvg/tot*100) : 0, vidP = tot ? Math.round(vidAvg/tot*100) : 0;
-      return '<td class="act"><span class="sv '+ssv(qrP)+'">'+qrAvg+'/'+tot+'</span><div class="sv-pct">'+qrP+'%</div></td>'
-           + '<td class="act"><span class="sv '+ssv(vidP)+'">'+vidAvg+'/'+tot+'</span><div class="sv-pct">'+vidP+'%</div></td>';
+      var qrProm = Math.round(qrPromSum/n), vidProm = Math.round(vidPromSum/n);
+      return '<td class="act"><span class="sv '+ssv(qrP)+'">'+qrAvg+'/'+tot+'</span><div class="sv-pct">Prom. '+qrProm+'%</div></td>'
+           + '<td class="act"><span class="sv '+ssv(vidP)+'">'+vidAvg+'/'+tot+'</span><div class="sv-pct">Prom. '+vidProm+'%</div></td>';
     }
-    var anySum = 0, totSum = 0;
+    var anySum = 0, totSum = 0, sesPromSum = 0;
     for (var i = 0; i < sems.length; i++) {
       var cv = mmA[sems[i]], semAny = 0, semTot = 0;
       for (var si = 0; si < sucs.length; si++) {
@@ -448,15 +475,17 @@ function renderResumen() {
         var p = sucPart(sd, sucs[si]); semAny += p.any; semTot += p.tot;
       }
       anySum += semAny; totSum += semTot;
+      sesPromSum += semAvgSes(cv, sucs);
     }
     var tot = Math.round(totSum/n), anyAvg = Math.round(anySum/n);
     var pct = tot ? Math.round(anyAvg/tot*100) : 0;
-    return '<td class="act"><span class="sv '+ssv(pct)+'">'+anyAvg+'/'+tot+'</span><div class="sv-pct">'+pct+'%</div></td>';
+    var sesProm = Math.round(sesPromSum/n);
+    return '<td class="act"><span class="sv '+ssv(pct)+'">'+anyAvg+'/'+tot+'</span><div class="sv-pct">Prom. '+sesProm+'%</div></td>';
   }
 
   var actHead = isBdo
-    ? '<th class="act" colspan="2">Prom. Participación</th>'
-    : '<th class="act">Prom. Participación</th>';
+    ? '<th class="act" colspan="2">Recuento de Participación</th>'
+    : '<th class="act">Recuento de Participación</th>';
 
   var tbody='', regs=Object.keys(h).sort();
   for (var ri=0;ri<regs.length;ri++) {
@@ -485,7 +514,11 @@ function renderResumen() {
           tbody+='<tr class="srow" id="tr_s_'+zk2+'_'+suc.replace(/\W/g,'_')+'" data-par="'+zk2+'"><td class="fix">'+suc+'</td>'+semCells([suc])+actCells([suc])+'</tr>';}}}
   }
   var subRow = isBdo ? ('<tr>'+thSub()+'</tr>') : '';
-  document.getElementById('tab_resumen').innerHTML =
+  var legend = '<div class="res-legend">'
+    +'<strong>X/Y</strong> = Recuento de participación (colaboradores que completaron todo lo activo) &nbsp;·&nbsp; '
+    +'<strong>Prom. %</strong> = promedio general de avance (tendencia histórica)'
+    +'</div>';
+  document.getElementById('tab_resumen').innerHTML = legend +
     '<div class="res-scroll"><table class="res-table"><thead>'
     +'<tr><th class="fix"'+(isBdo?' rowspan="2"':'')+'>Regional / Zona / Sucursal</th>'+thSems()+actHead+'</tr>'
     +subRow
