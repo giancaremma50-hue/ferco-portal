@@ -922,8 +922,13 @@ function renderParticipacion() {
   }
 
   var range = fechaIni ? 'Desde '+fechaIni+' hasta '+fechaFin : 'Hasta '+fechaFin;
-  var html = '<div class="pt-header"><h3 class="pt-title">Participación Acumulada</h3>'
-    +'<span class="pt-range">'+range+'</span></div>';
+  var html = '<div class="pt-header">'
+    +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+    +'<div><h3 class="pt-title">Participación Acumulada</h3><span class="pt-range">'+range+'</span></div>'
+    +((!isSolo4x4&&qrCols.length)
+      ? '<button class="btn" onclick="exportPartQR()" style="margin-left:auto">&#8595; Exportar Excel QR</button>'
+      : '')
+    +'</div></div>';
 
   if (!isSolo4x4 && qrCols.length) {
     html += '<div class="pt-section-title">Avance QR por Módulo — evolución mensual</div>';
@@ -934,6 +939,123 @@ function renderParticipacion() {
   html += buildTable();
 
   document.getElementById('tab_participacion').innerHTML = html;
+}
+
+/* ── Exportar participación QR a Excel ── */
+function exportPartQR() {
+  var allCortes = (DATA.historico && DATA.historico.cortes) || [];
+  var qrCols = getQR();
+  if (!allCortes.length || !qrCols.length) { alert('Sin datos históricos de QR'); return; }
+
+  var filtBdo = filterHier(DATA.bdo || []);
+  var sucsBdo = [...new Set(filtBdo.map(function(r){return r.sucursal;}).filter(isV))].sort();
+
+  /* Agrupar por semana */
+  var semMap = {};
+  for (var ci = 0; ci < allCortes.length; ci++) {
+    var c = allCortes[ci];
+    var k = c.semana;
+    if (!semMap[k]) semMap[k] = [];
+    semMap[k].push(c);
+  }
+  var sems = Object.keys(semMap).map(Number).sort(function(a,b){return a-b;});
+
+  function latestSd(cv, suc) {
+    for (var i = cv.length-1; i>=0; i--) {
+      if (cv[i].sucursales && cv[i].sucursales[suc]) return cv[i].sucursales[suc];
+    }
+    return null;
+  }
+
+  /* Filas semanales: promedios por módulo + conteo participación */
+  var semRows = sems.map(function(sem) {
+    var cv = semMap[sem];
+    var fecha = cv[cv.length-1].fecha;
+    var colAvgs = {};
+    qrCols.forEach(function(col) {
+      var vals = [];
+      for (var si=0;si<sucsBdo.length;si++) {
+        var sd = latestSd(cv, sucsBdo[si]);
+        if (sd && sd.bdo_qr_cols && sd.bdo_qr_cols[col] != null) vals.push(sd.bdo_qr_cols[col]);
+      }
+      colAvgs[col] = vals.length ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length) : null;
+    });
+    var qrN=0, tot=0;
+    for (var si=0;si<sucsBdo.length;si++) {
+      var sd = latestSd(cv, sucsBdo[si]);
+      if (!sd) continue;
+      qrN += sd.bdo_qr_n || 0;
+      tot += sd.bdo_total || 0;
+    }
+    return { sem: sem, fecha: fecha, colAvgs: colAvgs, qrN: qrN, tot: tot };
+  });
+
+  var hasColData = semRows.some(function(r){
+    return qrCols.some(function(col){ return r.colAvgs[col] !== null; });
+  });
+
+  function clr(v) { return v>=80?'#16a34a':v>=61?'#d97706':v>0?'#dc2626':'#94a3b8'; }
+  function cell(v, bold) {
+    if (v===null||v===undefined) return '<td style="text-align:center;color:#94a3b8">—</td>';
+    var s='text-align:center;color:'+clr(v)+(bold?';font-weight:700':'');
+    return '<td style="'+s+'">'+v+'%</td>';
+  }
+  function cellN(n,tot2) {
+    var p=tot2?Math.round(n/tot2*100):0;
+    return '<td style="text-align:center;color:'+clr(p)+';font-weight:700">'+n+'/'+tot2+'</td>'
+          +'<td style="text-align:center;color:'+clr(p)+';font-weight:700">'+p+'%</td>';
+  }
+
+  var thStyle='background:#f59e0b;color:#fff;padding:8px 14px;border:1px solid #e2e8f0;white-space:nowrap;font-size:12px';
+  var tdBord='border:1px solid #e2e8f0;padding:6px 12px;font-size:12px';
+
+  var paisName={GT:'Guatemala',HN:'Honduras',SV:'El Salvador'}[DATA.pais||'']||DATA.pais||'';
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    +'<style>table{border-collapse:collapse}tr:nth-child(even)td{background:#fff8e6}'
+    +'td{'+tdBord+'}</style></head><body>'
+    +'<div style="font-size:15px;font-weight:800;margin-bottom:14px">Participación QR — Ferco Cerámica '+paisName+'</div>';
+
+  /* Sección 1: evolución semanal */
+  html+='<div style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Avance semanal por módulo QR</div>';
+  if (!hasColData) {
+    html+='<p style="background:#fffbeb;border:1px solid #fcd34d;padding:8px 14px;border-radius:8px;color:#92400e;font-size:12px">'
+      +'Sin datos por módulo. Ejecuta "Reparar Historial" en el admin para habilitarlos.</p>';
+  } else {
+    html+='<table><thead><tr>'
+      +'<th style="'+thStyle+'">Semana</th><th style="'+thStyle+'">Fecha</th>';
+    qrCols.forEach(function(col){ html+='<th style="'+thStyle+'">'+col+'</th>'; });
+    html+='<th style="'+thStyle+'">Participantes</th><th style="'+thStyle+'">Total</th><th style="'+thStyle+'">%</th></tr></thead><tbody>';
+    semRows.forEach(function(row) {
+      html+='<tr><td style="text-align:center;font-weight:700">Sem '+row.sem+'</td><td>'+row.fecha+'</td>';
+      qrCols.forEach(function(col){ html+=cell(row.colAvgs[col]); });
+      html+=cellN(row.qrN, row.tot)+'</tr>';
+    });
+    html+='</tbody></table>';
+  }
+
+  /* Sección 2: por sucursal, último corte */
+  var lastSemCv = semMap[sems[sems.length-1]];
+  html+='<div style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin:22px 0 8px">Por sucursal — Semana '+sems[sems.length-1]+'</div>';
+  html+='<table><thead><tr><th style="'+thStyle+'">Sucursal</th>';
+  qrCols.forEach(function(col){ html+='<th style="'+thStyle+'">'+col+'</th>'; });
+  html+='<th style="'+thStyle+'">Part. QR</th><th style="'+thStyle+'">%</th></tr></thead><tbody>';
+  sucsBdo.forEach(function(suc) {
+    var sd=latestSd(lastSemCv, suc);
+    html+='<tr><td style="font-weight:600">'+suc+'</td>';
+    qrCols.forEach(function(col){
+      html+=cell(sd&&sd.bdo_qr_cols?sd.bdo_qr_cols[col]:null);
+    });
+    var qrN2=sd?sd.bdo_qr_n||0:0, tot2=sd?sd.bdo_total||0:0;
+    html+=cellN(qrN2,tot2)+'</tr>';
+  });
+  html+='</tbody></table></body></html>';
+
+  var fname='Ferco_'+(DATA.pais||'XX')+'_Part_QR_'+new Date().toISOString().slice(0,10)+'.xls';
+  var blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;a.download=fname;document.body.appendChild(a);a.click();
+  document.body.removeChild(a);URL.revokeObjectURL(url);
 }
 
 function _applyTabVisibility(tn) {
