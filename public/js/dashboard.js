@@ -999,6 +999,53 @@ function renderParticipacion() {
       +'<tbody>'+tbody+'</tbody></table></div>';
   }
 
+  /* ── TABLA DE COBERTURA POR SUCURSAL Y MES ── */
+  function buildCoverageTable() {
+    if (isSolo4x4 || !meses.length) return '';
+
+    /* Usar TODAS las sucursales del programa (sin filtro) para ver incorporaciones */
+    var allSucs = [...new Set((DATA.bdo||[]).map(function(r){return r.sucursal;}).filter(isV))].sort();
+
+    var th1c = '<th class="fix pt-fix-th">Sucursal</th>';
+    for (var mi = 0; mi < meses.length; mi++) {
+      var m = parseInt(meses[mi].substring(5,7),10), yr = meses[mi].substring(2,4);
+      th1c += '<th class="th-sem">' + MESES_ES[m-1] + '\'' + yr + '</th>';
+    }
+
+    var tbody2 = '';
+    allSucs.forEach(function(suc) {
+      tbody2 += '<tr><td class="fix" style="font-weight:600">' + suc + '</td>';
+      var prevPresent = false;
+      for (var mi = 0; mi < meses.length; mi++) {
+        var sd = latestSd(mesMap[meses[mi]], suc);
+        if (!sd || sd.bdo_total == null) {
+          tbody2 += '<td class="pt-tc" style="color:#94a3b8;font-size:11px">—</td>';
+          prevPresent = false;
+        } else {
+          var isNew = !prevPresent;
+          tbody2 += '<td class="pt-tc"'+(isNew?' style="background:var(--accent-light);font-weight:700"':'')+'>'+sd.bdo_total+(isNew?' <span style="font-size:9px;color:var(--accent)">★</span>':'')+'</td>';
+          prevPresent = true;
+        }
+      }
+      tbody2 += '</tr>';
+    });
+
+    /* Fila de totales */
+    tbody2 += '<tr style="border-top:2px solid var(--border);font-weight:700"><td class="fix">Total colaboradores</td>';
+    for (var mi = 0; mi < meses.length; mi++) {
+      var tot = 0;
+      allSucs.forEach(function(suc) {
+        var sd = latestSd(mesMap[meses[mi]], suc);
+        if (sd) tot += sd.bdo_total || 0;
+      });
+      tbody2 += '<td class="pt-tc">' + (tot || '—') + '</td>';
+    }
+    tbody2 += '</tr>';
+
+    return '<div class="res-scroll"><table class="res-table"><thead><tr>' + th1c + '</tr></thead>'
+      +'<tbody>' + tbody2 + '</tbody></table></div>';
+  }
+
   var range = fechaIni ? 'Desde '+fechaIni+' hasta '+fechaFin : 'Hasta '+fechaFin;
   var html = '<div class="pt-header">'
     +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
@@ -1017,6 +1064,12 @@ function renderParticipacion() {
 
   html += '<div class="pt-section-title" style="margin-top:24px">Participación por Mes y Sucursal</div>';
   html += buildTable();
+
+  if (!isSolo4x4) {
+    html += '<div class="pt-section-title" style="margin-top:24px">Incorporación al programa BDO por Sucursal'
+      +'<span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:10px">★ = primer mes activo &nbsp;|&nbsp; conteo = colaboradores actuales &nbsp;|&nbsp; — = no activa ese mes</span></div>';
+    html += buildCoverageTable();
+  }
 
   document.getElementById('tab_participacion').innerHTML = html;
 }
@@ -1125,7 +1178,41 @@ function exportPartQR() {
     });
     html+='<td style="text-align:center">'+(sd?sd.bdo_total||0:0)+'</td></tr>';
   });
-  html+='</tbody></table></body></html>';
+  html+='</tbody></table>';
+
+  /* Sección 3: incorporación histórica por sucursal (dato más confiable disponible) */
+  var allSucs2 = [...new Set((DATA.bdo||[]).map(function(r){return r.sucursal;}).filter(isV))].sort();
+  html+='<div style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin:22px 0 6px">Incorporación al programa BDO por sucursal y mes</div>';
+  html+='<p style="font-size:11px;color:#6b7280;margin-bottom:8px">★ = primer mes activo (dato histórico real). Conteo = colaboradores actuales (aproximado). — = sucursal no activa ese mes.</p>';
+  html+='<table><thead><tr><th style="'+thStyle+'">Sucursal</th>';
+  meses2.forEach(function(mes) {
+    var m=parseInt(mes.substring(5,7),10), yr=mes.substring(0,4);
+    html+='<th style="'+thStyle+'">'+MESES_ES[m-1]+' '+yr+'</th>';
+  });
+  html+='</tr></thead><tbody>';
+  allSucs2.forEach(function(suc) {
+    html+='<tr><td style="font-weight:600">'+suc+'</td>';
+    var prevP=false;
+    meses2.forEach(function(mes) {
+      var mv=mesMap2[mes], sd=latestSd(mv,suc);
+      if(!sd||sd.bdo_total==null){
+        html+='<td style="text-align:center;color:#94a3b8">—</td>';prevP=false;
+      } else {
+        var isN=!prevP;
+        html+='<td style="text-align:center;color:'+(isN?'#d97706':'#1e293b')+';font-weight:'+(isN?'700':'400')+'">'+sd.bdo_total+(isN?' ★':'')+'</td>';
+        prevP=true;
+      }
+    });
+    html+='</tr>';
+  });
+  /* Total row */
+  html+='<tr style="font-weight:700;background:#fff8e6"><td>Total</td>';
+  meses2.forEach(function(mes) {
+    var tot=0;
+    allSucs2.forEach(function(suc){var sd=latestSd(mesMap2[mes],suc);if(sd)tot+=sd.bdo_total||0;});
+    html+='<td style="text-align:center">'+tot+'</td>';
+  });
+  html+='</tr></tbody></table></body></html>';
 
   var fname='Ferco_'+(DATA.pais||'XX')+'_Part_QR_'+new Date().toISOString().slice(0,10)+'.xls';
   var blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
