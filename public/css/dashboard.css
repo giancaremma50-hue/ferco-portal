@@ -161,18 +161,8 @@ tr:hover td { background: var(--primary-light); }
 .pt-header { margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .pt-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
 .pt-range { font-size: 12px; color: var(--muted-fg); font-weight: 500; }
-.pt-cards { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-.pt-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px 22px; box-shadow: var(--shadow-sm); border-top: 3px solid var(--primary); min-width: 240px; flex: 1; }
-.pt-card-title { font-size: 12px; font-weight: 700; color: var(--muted-fg); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 14px; }
-.pt-stat { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
-.pt-stat:last-child { border-bottom: none; }
-.pt-stat-lbl { font-size: 13px; font-weight: 600; flex: 1; color: var(--foreground); }
-.pt-pct { font-size: 12px; color: var(--muted-fg); font-weight: 600; min-width: 36px; text-align: right; }
-.pt-table-wrap { overflow-x: auto; }
-.pt-table { border-collapse: collapse; width: 100%; }
-.pt-suc-th { text-align: left; font-size: 12px; color: var(--muted-fg); font-weight: 700; padding: 10px 14px; border-bottom: 2px solid var(--border); background: var(--soft); min-width: 160px; }
-.pt-num-th { text-align: center; font-size: 12px; color: var(--muted-fg); font-weight: 700; padding: 10px 14px; border-bottom: 2px solid var(--border); background: var(--soft); min-width: 110px; }
-.pt-suc-td { font-size: 13px; font-weight: 600; padding: 10px 14px; border-bottom: 1px solid var(--border); }
-.pt-num-td { text-align: center; padding: 10px 14px; border-bottom: 1px solid var(--border); }
-.pt-table tr:hover td { background: var(--primary-light); }
-@media(max-width: 700px) { .pt-cards { flex-direction: column; } }
+.pt-section-title { font-size: 13px; font-weight: 700; color: var(--muted-fg); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; }
+.pt-chart-wrap { background: var(--soft); border: 1px solid var(--border); border-radius: 14px; padding: 12px 8px 4px; margin-bottom: 8px; overflow-x: auto; }
+.pt-chart-notice { padding: 14px 18px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px; font-size: 13px; color: #92400e; margin-bottom: 8px; }
+.pt-fix-th { text-align: left; }
+.pt-tc { text-align: center; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }

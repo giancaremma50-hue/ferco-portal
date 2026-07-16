@@ -51,10 +51,16 @@ function buildSnapshot(body) {
       if (qrCols.length) {
         entry.bdo_qr   = avgVals(bdoRows, qrCols);
         entry.bdo_qr_n = countPart(bdoRows, qrCols);
+        const qrPerCol = {};
+        qrCols.forEach(col => { qrPerCol[col] = avgVals(bdoRows, [col]); });
+        entry.bdo_qr_cols = qrPerCol;
       }
       if (vidCols.length) {
         entry.bdo_video   = avgVals(bdoRows, vidCols);
         entry.bdo_video_n = countPart(bdoRows, vidCols);
+        const vidPerCol = {};
+        vidCols.forEach(col => { vidPerCol[col] = avgVals(bdoRows, [col]); });
+        entry.bdo_vid_cols = vidPerCol;
       }
     }
     if (x4xRows.length) {
