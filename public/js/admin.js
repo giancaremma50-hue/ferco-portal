@@ -1552,6 +1552,9 @@ function repairHistorico() {
       return active.every(function(k) { return parseFloat((r.valores && r.valores[k]) || 0) > 0; });
     }).length;
   }
+  function countAny(rows, col) {
+    return rows.filter(function(r) { return parseFloat((r.valores && r.valores[col]) || 0) > 0; }).length;
+  }
 
   // Indexar filas actuales por sucursal (una sola vez)
   var bdoBySuc = {}, x4xBySuc = {};
@@ -1585,21 +1588,25 @@ function repairHistorico() {
         entry.bdo_total   = bdoRows.length;
         if (qrCols.length) {
           entry.bdo_qr_n = countPart(bdoRows, qrCols);
-          var qrPerCol = {};
+          var qrPerCol = {}, qrNPerCol = {};
           qrCols.forEach(function(col) {
             var vals = bdoRows.map(function(r) { return parseFloat((r.valores && r.valores[col]) || 0); });
             qrPerCol[col] = vals.length ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length) : 0;
+            qrNPerCol[col] = countAny(bdoRows, col);
           });
-          entry.bdo_qr_cols = qrPerCol;
+          entry.bdo_qr_cols   = qrPerCol;
+          entry.bdo_qr_n_cols = qrNPerCol;
         }
         if (vidCols.length) {
           entry.bdo_video_n = countPart(bdoRows, vidCols);
-          var vidPerCol = {};
+          var vidPerCol = {}, vidNPerCol = {};
           vidCols.forEach(function(col) {
             var vals = bdoRows.map(function(r) { return parseFloat((r.valores && r.valores[col]) || 0); });
             vidPerCol[col] = vals.length ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length) : 0;
+            vidNPerCol[col] = countAny(bdoRows, col);
           });
-          entry.bdo_vid_cols = vidPerCol;
+          entry.bdo_vid_cols   = vidPerCol;
+          entry.bdo_vid_n_cols = vidNPerCol;
         }
       }
       if (has4x4) {

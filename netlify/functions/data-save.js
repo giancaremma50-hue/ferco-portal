@@ -35,6 +35,10 @@ function buildSnapshot(body) {
     return rows.filter(r => active.every(k => parseFloat(r.valores?.[k] || 0) > 0)).length;
   }
 
+  function countAny(rows, col) {
+    return rows.filter(r => parseFloat(r.valores?.[col] || 0) > 0).length;
+  }
+
   const allRows = [...(body.bdo || []), ...(body.x4x || [])];
   const sucNames = [...new Set(allRows.map((r) => r.sucursal).filter(Boolean))];
 
@@ -51,16 +55,24 @@ function buildSnapshot(body) {
       if (qrCols.length) {
         entry.bdo_qr   = avgVals(bdoRows, qrCols);
         entry.bdo_qr_n = countPart(bdoRows, qrCols);
-        const qrPerCol = {};
-        qrCols.forEach(col => { qrPerCol[col] = avgVals(bdoRows, [col]); });
-        entry.bdo_qr_cols = qrPerCol;
+        const qrPerCol = {}, qrNPerCol = {};
+        qrCols.forEach(col => {
+          qrPerCol[col]  = avgVals(bdoRows, [col]);
+          qrNPerCol[col] = countAny(bdoRows, col);
+        });
+        entry.bdo_qr_cols   = qrPerCol;
+        entry.bdo_qr_n_cols = qrNPerCol;
       }
       if (vidCols.length) {
         entry.bdo_video   = avgVals(bdoRows, vidCols);
         entry.bdo_video_n = countPart(bdoRows, vidCols);
-        const vidPerCol = {};
-        vidCols.forEach(col => { vidPerCol[col] = avgVals(bdoRows, [col]); });
-        entry.bdo_vid_cols = vidPerCol;
+        const vidPerCol = {}, vidNPerCol = {};
+        vidCols.forEach(col => {
+          vidPerCol[col]  = avgVals(bdoRows, [col]);
+          vidNPerCol[col] = countAny(bdoRows, col);
+        });
+        entry.bdo_vid_cols   = vidPerCol;
+        entry.bdo_vid_n_cols = vidNPerCol;
       }
     }
     if (x4xRows.length) {
