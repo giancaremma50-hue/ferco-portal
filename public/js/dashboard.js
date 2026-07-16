@@ -84,6 +84,18 @@ function sucSesAvg(sd) {
 }
 
 /* ── Filtrado de filas ── */
+function filterHier(rows) {
+  var CANAL  = cfg('tieneCanal');
+  var REGION = cfg('tieneRegion');
+  var ZONA   = cfg('tieneZona');
+  return rows.filter(function(r) {
+    if (r.sucursal && !isV(r.sucursal)) return false;
+    return (!CANAL  || !state.canal  || r.canal    === state.canal)
+        && (!REGION || state.region  === 'Todas'   || r.region   === state.region)
+        && (!ZONA   || state.zona    === 'Todas'   || r.zona     === state.zona)
+        && (state.suc === 'Todas' || r.sucursal === state.suc);
+  });
+}
 function fdRows() {
   var CANAL   = cfg('tieneCanal');
   var REGION  = cfg('tieneRegion');
@@ -702,24 +714,130 @@ function renderHistorico() {
 }
 
 /* ── Control general ── */
+/* ── Participación acumulada ── */
+function renderParticipacion() {
+  var isSolo4x4 = cfg('solo4x4');
+  var qrCols  = getQR();
+  var vidCols = getVid();
+  var sesCols = getSes();
+
+  var allBdo = isSolo4x4 ? [] : filterHier(DATA.bdo || []);
+  var allX4x = filterHier(DATA.x4x || []);
+
+  var cortes   = (DATA.historico && DATA.historico.cortes) || [];
+  var fechaIni = cortes.length ? cortes[0].fecha : null;
+  var fechaFin = DATA.updatedAt ? new Date(DATA.updatedAt).toLocaleDateString('es-GT') : new Date().toLocaleDateString('es-GT');
+
+  function countPart(rows, cols) {
+    var active = cols.filter(function(k) {
+      return rows.some(function(r) { return pct(r.valores && r.valores[k]) > 0; });
+    });
+    if (!active.length) return { n: 0, tot: rows.length };
+    return {
+      n: rows.filter(function(r) {
+        return active.every(function(k) { return pct(r.valores && r.valores[k]) > 0; });
+      }).length,
+      tot: rows.length
+    };
+  }
+
+  function statRow(st, label) {
+    if (!st || !st.tot) return '<div class="pt-stat"><span class="pt-stat-lbl">'+label+'</span><span class="s0">—</span></div>';
+    var p = Math.round(st.n / st.tot * 100);
+    return '<div class="pt-stat">'
+      +'<span class="pt-stat-lbl">'+label+'</span>'
+      +'<span class="sv '+ssv(p)+'">'+st.n+'/'+st.tot+'</span>'
+      +'<span class="pt-pct">'+p+'%</span>'
+      +'</div>';
+  }
+
+  var cardsHtml = '';
+  if (!isSolo4x4 && allBdo.length) {
+    var gQr  = countPart(allBdo, qrCols);
+    var gVid = countPart(allBdo, vidCols);
+    cardsHtml += '<div class="pt-card">'
+      +'<div class="pt-card-title">Bateador de Objeciones</div>'
+      + statRow(gQr,  'QR — Códigos')
+      + statRow(gVid, 'Video — Módulos')
+      +'</div>';
+  }
+  if (allX4x.length) {
+    var g4x4 = countPart(allX4x, sesCols);
+    cardsHtml += '<div class="pt-card">'
+      +'<div class="pt-card-title">Despliegue 4×4</div>'
+      + statRow(g4x4, 'Sesiones completadas')
+      +'</div>';
+  }
+
+  var allRows = allBdo.concat(allX4x);
+  var sucNames = [], seen = {};
+  for (var i = 0; i < allRows.length; i++) {
+    var s = allRows[i].sucursal;
+    if (s && isV(s) && !seen[s]) { seen[s] = true; sucNames.push(s); }
+  }
+  sucNames.sort();
+
+  var thead = '<th class="pt-suc-th">Sucursal</th>';
+  if (!isSolo4x4) thead += '<th class="pt-num-th">BDO — QR</th><th class="pt-num-th">BDO — Video</th>';
+  thead += '<th class="pt-num-th">4×4 — Sesiones</th>';
+
+  var tbody = sucNames.map(function(suc) {
+    var bRows = allBdo.filter(function(r) { return r.sucursal === suc; });
+    var xRows = allX4x.filter(function(r) { return r.sucursal === suc; });
+    var cells = '<td class="pt-suc-td">'+suc+'</td>';
+
+    if (!isSolo4x4) {
+      if (bRows.length) {
+        var sq = countPart(bRows, qrCols), sv2 = countPart(bRows, vidCols);
+        var pq = sq.tot  ? Math.round(sq.n  / sq.tot  * 100) : 0;
+        var pv = sv2.tot ? Math.round(sv2.n / sv2.tot * 100) : 0;
+        cells += '<td class="pt-num-td"><span class="sv '+ssv(pq)+'">'+sq.n+'/'+sq.tot+'</span><div class="sv-pct">'+pq+'%</div></td>';
+        cells += '<td class="pt-num-td"><span class="sv '+ssv(pv)+'">'+sv2.n+'/'+sv2.tot+'</span><div class="sv-pct">'+pv+'%</div></td>';
+      } else {
+        cells += '<td class="pt-num-td s0">—</td><td class="pt-num-td s0">—</td>';
+      }
+    }
+    if (xRows.length) {
+      var s4 = countPart(xRows, sesCols);
+      var p4 = s4.tot ? Math.round(s4.n / s4.tot * 100) : 0;
+      cells += '<td class="pt-num-td"><span class="sv '+ssv(p4)+'">'+s4.n+'/'+s4.tot+'</span><div class="sv-pct">'+p4+'%</div></td>';
+    } else {
+      cells += '<td class="pt-num-td s0">—</td>';
+    }
+    return '<tr>'+cells+'</tr>';
+  }).join('');
+
+  var range = fechaIni
+    ? 'Desde '+fechaIni+' hasta '+fechaFin
+    : 'Hasta '+fechaFin;
+
+  document.getElementById('tab_participacion').innerHTML =
+    '<div class="pt-header"><h3 class="pt-title">Participación Acumulada</h3>'
+    +'<span class="pt-range">'+range+'</span></div>'
+    +'<div class="pt-cards">'+cardsHtml+'</div>'
+    +'<div class="pt-table-wrap"><table class="pt-table">'
+    +'<thead><tr>'+thead+'</tr></thead><tbody>'+tbody+'</tbody></table></div>';
+}
+
 function _applyTabVisibility(tn) {
   document.getElementById('kpisRow').style.display = tn==='detalle' ? 'grid' : 'none';
-  /* filtersSection: visible en detalle e historico; en resumen solo si GT */
   var showFilters = tn!=='resumen' || cfg('tieneResumen');
   document.getElementById('filtersSection').style.display = showFilters ? 'block' : 'none';
-  /* filtersMain: visible siempre */
   var fm=document.getElementById('filtersMain');
   if(fm) fm.style.display = '';
-  /* mesRow: historico (todos) o resumen GT */
   var mr=document.getElementById('mesRow');
   if(mr) mr.style.display = (tn==='historico'||(tn==='resumen'&&cfg('tieneResumen'))) ? 'block' : 'none';
+  /* ocultar toggle BDO/4x4 en pestaña Participación (muestra ambos programas) */
+  var tog=document.getElementById('togArea');
+  if(tog) tog.style.display = tn==='participacion' ? 'none' : '';
 }
 function render() {
   var t = document.querySelector('.tab.active'); var tn = t ? t.dataset.tab : 'detalle';
   _applyTabVisibility(tn);
-  if (tn==='detalle')        { renderKPIs(); renderDetalle(); }
-  else if (tn==='resumen')   renderResumen();
-  else if (tn==='historico') renderHistorico();
+  if (tn==='detalle')             { renderKPIs(); renderDetalle(); }
+  else if (tn==='resumen')        renderResumen();
+  else if (tn==='historico')      renderHistorico();
+  else if (tn==='participacion')  renderParticipacion();
 }
 function buildTog() {
   if (cfg('solo4x4')) return;
@@ -747,7 +865,7 @@ function clearAll(){
   popSels();render();
 }
 function setTab(t, btn) {
-  ['detalle','resumen','historico'].forEach(function(x){
+  ['detalle','resumen','historico','participacion'].forEach(function(x){
     var el=document.getElementById('tab_'+x);if(el)el.style.display=x===t?'block':'none';});
   document.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active');delete b.dataset.tab;});
   btn.classList.add('active');btn.dataset.tab=t;

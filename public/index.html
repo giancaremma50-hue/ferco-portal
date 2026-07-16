@@ -44,6 +44,7 @@
       <button class="tab active" data-tab="detalle" onclick="setTab('detalle',this)">Detalle</button>
       <button class="tab" id="tabResumen" data-tab="resumen" onclick="setTab('resumen',this)">Resumen</button>
       <button class="tab" data-tab="historico" onclick="setTab('historico',this)">Histórico</button>
+      <button class="tab" data-tab="participacion" onclick="setTab('participacion',this)">Participación</button>
     </div>
   </div>
 
@@ -100,6 +101,7 @@
     </div>
     <div id="tab_resumen" style="display:none"></div>
     <div id="tab_historico" style="display:none"></div>
+    <div id="tab_participacion" style="display:none"></div>
   </div>
 
   <p style="text-align:center;color:var(--muted);font-size:11px;margin-top:20px">
@@ -176,7 +178,7 @@ async function selectCountry(pais) {
     var firstTab = document.querySelector('[data-tab="detalle"]') || document.querySelector('.tab');
     if (firstTab) { firstTab.classList.add('active'); firstTab.dataset.tab = 'detalle'; }
 
-    ['detalle','resumen','historico'].forEach(function(x){
+    ['detalle','resumen','historico','participacion'].forEach(function(x){
       var el = document.getElementById('tab_'+x);
       if (el) el.style.display = x==='detalle' ? 'block' : 'none';
     });
