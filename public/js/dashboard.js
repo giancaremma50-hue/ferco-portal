@@ -720,103 +720,342 @@ function renderParticipacion() {
   var qrCols  = getQR();
   var vidCols = getVid();
   var sesCols = getSes();
+  var COLORS   = ['#3b82f6','#16a34a','#7c3aed','#ea580c','#dc2626','#0891b2','#d97706'];
 
-  var allBdo = isSolo4x4 ? [] : filterHier(DATA.bdo || []);
-  var allX4x = filterHier(DATA.x4x || []);
+  var allCortes = (DATA.historico && DATA.historico.cortes) || [];
+  var fechaIni  = allCortes.length ? allCortes[0].fecha : null;
+  var fechaFin  = DATA.updatedAt
+    ? new Date(DATA.updatedAt).toLocaleDateString('es-GT')
+    : new Date().toLocaleDateString('es-GT');
 
-  var cortes   = (DATA.historico && DATA.historico.cortes) || [];
-  var fechaIni = cortes.length ? cortes[0].fecha : null;
-  var fechaFin = DATA.updatedAt ? new Date(DATA.updatedAt).toLocaleDateString('es-GT') : new Date().toLocaleDateString('es-GT');
+  /* Grupo de meses: { mesKey → [corte, ...] } */
+  var mesMap = {};
+  for (var ci = 0; ci < allCortes.length; ci++) {
+    var mk = allCortes[ci].mesKey;
+    if (!mesMap[mk]) mesMap[mk] = [];
+    mesMap[mk].push(allCortes[ci]);
+  }
+  var meses = Object.keys(mesMap).sort();
 
-  function countPart(rows, cols) {
-    var active = cols.filter(function(k) {
-      return rows.some(function(r) { return pct(r.valores && r.valores[k]) > 0; });
+  /* Sucursales filtradas (respeta Canal/Región/Zona/Sucursal) */
+  var filtBdo = isSolo4x4 ? [] : filterHier(DATA.bdo || []);
+  var filtX4x = filterHier(DATA.x4x || []);
+  var sucsBdo  = [...new Set(filtBdo.map(function(r){return r.sucursal;}).filter(isV))];
+
+  /* Último snapshot de una sucursal dentro del conjunto de cortes de un mes */
+  function latestSd(mv, suc) {
+    for (var i = mv.length - 1; i >= 0; i--) {
+      if (mv[i].sucursales && mv[i].sucursales[suc]) return mv[i].sucursales[suc];
+    }
+    return null;
+  }
+
+  /* ── GRÁFICO QR POR MÓDULO ── */
+  function buildChart() {
+    if (isSolo4x4 || !qrCols.length || !meses.length) return '';
+
+    /* Serie por columna QR: promedio mensual sobre sucursales filtradas */
+    var series = {};
+    qrCols.forEach(function(col) { series[col] = []; });
+
+    for (var mi = 0; mi < meses.length; mi++) {
+      var mv = mesMap[meses[mi]];
+      qrCols.forEach(function(col) {
+        var vals = [];
+        for (var si = 0; si < sucsBdo.length; si++) {
+          var sd = latestSd(mv, sucsBdo[si]);
+          if (sd && sd.bdo_qr_cols && sd.bdo_qr_cols[col] != null) {
+            vals.push(sd.bdo_qr_cols[col]);
+          }
+        }
+        series[col].push(vals.length
+          ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length)
+          : null);
+      });
+    }
+
+    var hasData = qrCols.some(function(col){
+      return series[col].some(function(v){ return v !== null; });
     });
-    if (!active.length) return { n: 0, tot: rows.length };
-    return {
-      n: rows.filter(function(r) {
-        return active.every(function(k) { return pct(r.valores && r.valores[k]) > 0; });
-      }).length,
-      tot: rows.length
-    };
-  }
+    if (!hasData) {
+      return '<div class="pt-chart-notice">Sin datos por módulo en el histórico. '
+        +'Ejecuta <strong>Reparar Historial</strong> en el admin para habilitar este gráfico.</div>';
+    }
 
-  function statRow(st, label) {
-    if (!st || !st.tot) return '<div class="pt-stat"><span class="pt-stat-lbl">'+label+'</span><span class="s0">—</span></div>';
-    var p = Math.round(st.n / st.tot * 100);
-    return '<div class="pt-stat">'
-      +'<span class="pt-stat-lbl">'+label+'</span>'
-      +'<span class="sv '+ssv(p)+'">'+st.n+'/'+st.tot+'</span>'
-      +'<span class="pt-pct">'+p+'%</span>'
-      +'</div>';
-  }
+    var W=900,H=300,PL=44,PR=24,PT=24,PB=76;
+    var CW=W-PL-PR, CH=H-PT-PB;
+    var n = meses.length;
+    var svg = '';
 
-  var cardsHtml = '';
-  if (!isSolo4x4 && allBdo.length) {
-    var gQr  = countPart(allBdo, qrCols);
-    var gVid = countPart(allBdo, vidCols);
-    cardsHtml += '<div class="pt-card">'
-      +'<div class="pt-card-title">Bateador de Objeciones</div>'
-      + statRow(gQr,  'QR — Códigos')
-      + statRow(gVid, 'Video — Módulos')
-      +'</div>';
-  }
-  if (allX4x.length) {
-    var g4x4 = countPart(allX4x, sesCols);
-    cardsHtml += '<div class="pt-card">'
-      +'<div class="pt-card-title">Despliegue 4×4</div>'
-      + statRow(g4x4, 'Sesiones completadas')
-      +'</div>';
-  }
+    /* Cuadrícula Y */
+    for (var y=0;y<=100;y+=20) {
+      var gy=(PT+CH-(y/100)*CH).toFixed(1);
+      svg+='<line x1="'+PL+'" y1="'+gy+'" x2="'+(W-PR)+'" y2="'+gy+'" stroke="#e2e8f0" stroke-width="1"/>';
+      svg+='<text x="'+(PL-6)+'" y="'+(parseFloat(gy)+4)+'" text-anchor="end" font-size="10" fill="#94a3b8">'+y+'</text>';
+    }
+    /* Etiquetas X */
+    for (var mi=0;mi<meses.length;mi++) {
+      var gx=(PL+(n>1?mi/(n-1):0.5)*CW).toFixed(1);
+      var m=parseInt(meses[mi].substring(5,7),10);
+      var yr=meses[mi].substring(2,4);
+      svg+='<text x="'+gx+'" y="'+(H-PB+18)+'" text-anchor="middle" font-size="9" fill="#94a3b8">'+MESES_ES[m-1].substring(0,3)+' '+yr+'</text>';
+    }
 
-  var allRows = allBdo.concat(allX4x);
-  var sucNames = [], seen = {};
-  for (var i = 0; i < allRows.length; i++) {
-    var s = allRows[i].sucursal;
-    if (s && isV(s) && !seen[s]) { seen[s] = true; sucNames.push(s); }
-  }
-  sucNames.sort();
-
-  var thead = '<th class="pt-suc-th">Sucursal</th>';
-  if (!isSolo4x4) thead += '<th class="pt-num-th">BDO — QR</th><th class="pt-num-th">BDO — Video</th>';
-  thead += '<th class="pt-num-th">4×4 — Sesiones</th>';
-
-  var tbody = sucNames.map(function(suc) {
-    var bRows = allBdo.filter(function(r) { return r.sucursal === suc; });
-    var xRows = allX4x.filter(function(r) { return r.sucursal === suc; });
-    var cells = '<td class="pt-suc-td">'+suc+'</td>';
-
-    if (!isSolo4x4) {
-      if (bRows.length) {
-        var sq = countPart(bRows, qrCols), sv2 = countPart(bRows, vidCols);
-        var pq = sq.tot  ? Math.round(sq.n  / sq.tot  * 100) : 0;
-        var pv = sv2.tot ? Math.round(sv2.n / sv2.tot * 100) : 0;
-        cells += '<td class="pt-num-td"><span class="sv '+ssv(pq)+'">'+sq.n+'/'+sq.tot+'</span><div class="sv-pct">'+pq+'%</div></td>';
-        cells += '<td class="pt-num-td"><span class="sv '+ssv(pv)+'">'+sv2.n+'/'+sv2.tot+'</span><div class="sv-pct">'+pv+'%</div></td>';
-      } else {
-        cells += '<td class="pt-num-td s0">—</td><td class="pt-num-td s0">—</td>';
+    /* Líneas por módulo */
+    for (var qi=0;qi<qrCols.length;qi++) {
+      var col=qrCols[qi], vals2=series[col], color=COLORS[qi%COLORS.length];
+      var pts=[];
+      for (var mi=0;mi<meses.length;mi++) {
+        if (vals2[mi]!==null) {
+          pts.push({
+            x: PL+(n>1?mi/(n-1):0.5)*CW,
+            y: PT+CH-(vals2[mi]/100)*CH,
+            v: vals2[mi]
+          });
+        }
+      }
+      if (pts.length>=2) {
+        var path='M'+pts[0].x.toFixed(1)+','+pts[0].y.toFixed(1);
+        for (var pi=1;pi<pts.length;pi++) path+=' L'+pts[pi].x.toFixed(1)+','+pts[pi].y.toFixed(1);
+        svg+='<path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+      }
+      for (var pi=0;pi<pts.length;pi++) {
+        svg+='<circle cx="'+pts[pi].x.toFixed(1)+'" cy="'+pts[pi].y.toFixed(1)+'" r="4" fill="'+color+'" stroke="#fff" stroke-width="1.5"/>';
+        svg+='<text x="'+pts[pi].x.toFixed(1)+'" y="'+(pts[pi].y-9).toFixed(1)+'" text-anchor="middle" font-size="9" fill="'+color+'" font-weight="700">'+pts[pi].v+'%</text>';
       }
     }
-    if (xRows.length) {
-      var s4 = countPart(xRows, sesCols);
-      var p4 = s4.tot ? Math.round(s4.n / s4.tot * 100) : 0;
-      cells += '<td class="pt-num-td"><span class="sv '+ssv(p4)+'">'+s4.n+'/'+s4.tot+'</span><div class="sv-pct">'+p4+'%</div></td>';
-    } else {
-      cells += '<td class="pt-num-td s0">—</td>';
+
+    /* Leyenda */
+    var legY=H-PB+36, legItemW=CW/Math.max(qrCols.length,1);
+    for (var qi=0;qi<qrCols.length;qi++) {
+      var lx=(PL+qi*legItemW).toFixed(1);
+      var color=COLORS[qi%COLORS.length];
+      var shortName=qrCols[qi].replace(/^QR\s*/i,'');
+      svg+='<line x1="'+lx+'" y1="'+(legY+2)+'" x2="'+(parseFloat(lx)+14)+'" y2="'+(legY+2)+'" stroke="'+color+'" stroke-width="3"/>';
+      svg+='<text x="'+(parseFloat(lx)+18)+'" y="'+(legY+6)+'" font-size="10" fill="#475569">'+shortName+'</text>';
     }
-    return '<tr>'+cells+'</tr>';
-  }).join('');
 
-  var range = fechaIni
-    ? 'Desde '+fechaIni+' hasta '+fechaFin
-    : 'Hasta '+fechaFin;
+    return '<div class="pt-chart-wrap"><svg width="100%" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">'+svg+'</svg></div>';
+  }
 
-  document.getElementById('tab_participacion').innerHTML =
-    '<div class="pt-header"><h3 class="pt-title">Participación Acumulada</h3>'
-    +'<span class="pt-range">'+range+'</span></div>'
-    +'<div class="pt-cards">'+cardsHtml+'</div>'
-    +'<div class="pt-table-wrap"><table class="pt-table">'
-    +'<thead><tr>'+thead+'</tr></thead><tbody>'+tbody+'</tbody></table></div>';
+  /* ── TABLA JERÁRQUICA POR MES ── */
+  function buildTable() {
+    if (!meses.length) return '<p style="color:var(--muted);padding:16px">Sin histórico disponible.</p>';
+
+    var h = buildHier();
+    var colabsPerSuc = {};
+    (DATA.bdo||[]).forEach(function(r){if(r.sucursal)colabsPerSuc[r.sucursal]=(colabsPerSuc[r.sucursal]||0)+1;});
+
+    function mesCells(sucs) {
+      var out='';
+      for (var mi=0;mi<meses.length;mi++) {
+        var mv=mesMap[meses[mi]], qrN=0,vidN=0,x4N=0,bdoTot=0,x4Tot=0;
+        for (var si=0;si<sucs.length;si++) {
+          var sd=latestSd(mv,sucs[si]);
+          if (!sd) continue;
+          if (!isSolo4x4) {
+            bdoTot += sd.bdo_total || colabsPerSuc[sucs[si]] || 0;
+            qrN    += sd.bdo_qr_n   || 0;
+            vidN   += sd.bdo_video_n || 0;
+          }
+          x4Tot  += sd['4x4_total'] || 0;
+          x4N    += sd['4x4_n']     || 0;
+        }
+        if (!isSolo4x4) {
+          var pQr=bdoTot?Math.round(qrN/bdoTot*100):0;
+          var pVd=bdoTot?Math.round(vidN/bdoTot*100):0;
+          out+='<td class="pt-tc sem-sep"><span class="sv '+ssv(pQr)+'">'+qrN+'/'+bdoTot+'</span><div class="sv-pct">'+pQr+'%</div></td>';
+          out+='<td class="pt-tc"><span class="sv '+ssv(pVd)+'">'+vidN+'/'+bdoTot+'</span><div class="sv-pct">'+pVd+'%</div></td>';
+        } else {
+          var p4=x4Tot?Math.round(x4N/x4Tot*100):0;
+          out+='<td class="pt-tc sem-sep"><span class="sv '+ssv(p4)+'">'+x4N+'/'+x4Tot+'</span><div class="sv-pct">'+p4+'%</div></td>';
+        }
+      }
+      return out;
+    }
+
+    var cs=isSolo4x4?1:2;
+    var th1='<th class="fix pt-fix-th" rowspan="2">Regional / Zona / Sucursal</th>';
+    for (var mi=0;mi<meses.length;mi++) {
+      var m=parseInt(meses[mi].substring(5,7),10), yr=meses[mi].substring(2,4);
+      th1+='<th class="th-sem sem-sep" colspan="'+cs+'">'+MESES_ES[m-1]+' '+yr+'</th>';
+    }
+    var th2='';
+    if (!isSolo4x4) {
+      for (var mi=0;mi<meses.length;mi++) th2+='<th class="th-sub sem-sep">QR</th><th class="th-sub">Video</th>';
+    }
+
+    var tbody='', regs=Object.keys(h).sort();
+    for (var ri=0;ri<regs.length;ri++) {
+      var reg=regs[ri], e=h[reg];
+      var regSucs=[...new Set(e.rows.map(function(r){return r.sucursal;}).filter(isV))].sort();
+      var rk='rp_'+reg.replace(/\W/g,'_');
+      tbody+='<tr class="rrow"><td class="fix"><button class="xbtn" data-nk="'+rk+'" onclick="tgNode(this)">+</button>'+reg+'</td>'+mesCells(regSucs)+'</tr>';
+      var zks=Object.keys(e.zonas).sort();
+      var selfZ=zks.filter(function(z){return z===reg;}), otherZ=zks.filter(function(z){return z!==reg;});
+      if (otherZ.length===0) {
+        var szSucs=[...new Set((e.zonas[selfZ[0]]||[]).map(function(r){return r.sucursal;}).filter(isV))].sort();
+        for (var si=0;si<szSucs.length;si++) {
+          tbody+='<tr class="srow" data-par="'+rk+'"><td class="fix">'+szSucs[si]+'</td>'+mesCells([szSucs[si]])+'</tr>';
+        }
+      } else {
+        for (var szi=0;szi<selfZ.length;szi++) {
+          var szS=[...new Set((e.zonas[selfZ[szi]]||[]).map(function(r){return r.sucursal;}).filter(isV))].sort();
+          for (var si=0;si<szS.length;si++) {
+            tbody+='<tr class="srow srow-direct" data-par="'+rk+'"><td class="fix">'+szS[si]+'</td>'+mesCells([szS[si]])+'</tr>';
+          }
+        }
+        for (var zi=0;zi<otherZ.length;zi++) {
+          var z=otherZ[zi], zSucs=[...new Set(e.zonas[z].map(function(r){return r.sucursal;}).filter(isV))].sort();
+          var zk2='zp_'+rk+'_'+z.replace(/\W/g,'_');
+          tbody+='<tr class="zrow" id="tr_'+zk2+'" data-par="'+rk+'"><td class="fix"><button class="xbtn" data-nk="'+zk2+'" onclick="tgNode(this)">+</button>'+z+'</td>'+mesCells(zSucs)+'</tr>';
+          for (var si=0;si<zSucs.length;si++) {
+            tbody+='<tr class="srow" data-par="'+zk2+'"><td class="fix">'+zSucs[si]+'</td>'+mesCells([zSucs[si]])+'</tr>';
+          }
+        }
+      }
+    }
+
+    return '<div class="res-scroll"><table class="res-table">'
+      +'<thead><tr>'+th1+'</tr>'+(th2?'<tr>'+th2+'</tr>':'')+'</thead>'
+      +'<tbody>'+tbody+'</tbody></table></div>';
+  }
+
+  var range = fechaIni ? 'Desde '+fechaIni+' hasta '+fechaFin : 'Hasta '+fechaFin;
+  var html = '<div class="pt-header">'
+    +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+    +'<div><h3 class="pt-title">Participación Acumulada</h3><span class="pt-range">'+range+'</span></div>'
+    +((!isSolo4x4&&qrCols.length)
+      ? '<button class="btn" onclick="exportPartQR()" style="margin-left:auto">&#8595; Exportar Excel QR</button>'
+      : '')
+    +'</div></div>';
+
+  if (!isSolo4x4 && qrCols.length) {
+    html += '<div class="pt-section-title">Avance QR por Módulo — evolución mensual</div>';
+    html += buildChart();
+  }
+
+  html += '<div class="pt-section-title" style="margin-top:24px">Participación por Mes y Sucursal</div>';
+  html += buildTable();
+
+  document.getElementById('tab_participacion').innerHTML = html;
+}
+
+/* ── Exportar participación QR a Excel ── */
+function exportPartQR() {
+  var allCortes = (DATA.historico && DATA.historico.cortes) || [];
+  var qrCols = getQR();
+  if (!allCortes.length || !qrCols.length) { alert('Sin datos históricos de QR'); return; }
+
+  var filtBdo = filterHier(DATA.bdo || []);
+  var sucsBdo = [...new Set(filtBdo.map(function(r){return r.sucursal;}).filter(isV))].sort();
+
+  /* Agrupar por semana */
+  var semMap = {};
+  for (var ci = 0; ci < allCortes.length; ci++) {
+    var c = allCortes[ci];
+    var k = c.semana;
+    if (!semMap[k]) semMap[k] = [];
+    semMap[k].push(c);
+  }
+  var sems = Object.keys(semMap).map(Number).sort(function(a,b){return a-b;});
+
+  function latestSd(cv, suc) {
+    for (var i = cv.length-1; i>=0; i--) {
+      if (cv[i].sucursales && cv[i].sucursales[suc]) return cv[i].sucursales[suc];
+    }
+    return null;
+  }
+
+  /* Filas semanales: promedios por módulo + conteo participación */
+  var semRows = sems.map(function(sem) {
+    var cv = semMap[sem];
+    var fecha = cv[cv.length-1].fecha;
+    var colAvgs = {};
+    qrCols.forEach(function(col) {
+      var vals = [];
+      for (var si=0;si<sucsBdo.length;si++) {
+        var sd = latestSd(cv, sucsBdo[si]);
+        if (sd && sd.bdo_qr_cols && sd.bdo_qr_cols[col] != null) vals.push(sd.bdo_qr_cols[col]);
+      }
+      colAvgs[col] = vals.length ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length) : null;
+    });
+    var qrN=0, tot=0;
+    for (var si=0;si<sucsBdo.length;si++) {
+      var sd = latestSd(cv, sucsBdo[si]);
+      if (!sd) continue;
+      qrN += sd.bdo_qr_n || 0;
+      tot += sd.bdo_total || 0;
+    }
+    return { sem: sem, fecha: fecha, colAvgs: colAvgs, qrN: qrN, tot: tot };
+  });
+
+  var hasColData = semRows.some(function(r){
+    return qrCols.some(function(col){ return r.colAvgs[col] !== null; });
+  });
+
+  function clr(v) { return v>=80?'#16a34a':v>=61?'#d97706':v>0?'#dc2626':'#94a3b8'; }
+  function cell(v, bold) {
+    if (v===null||v===undefined) return '<td style="text-align:center;color:#94a3b8">—</td>';
+    var s='text-align:center;color:'+clr(v)+(bold?';font-weight:700':'');
+    return '<td style="'+s+'">'+v+'%</td>';
+  }
+  function cellN(n,tot2) {
+    var p=tot2?Math.round(n/tot2*100):0;
+    return '<td style="text-align:center;color:'+clr(p)+';font-weight:700">'+n+'/'+tot2+'</td>'
+          +'<td style="text-align:center;color:'+clr(p)+';font-weight:700">'+p+'%</td>';
+  }
+
+  var thStyle='background:#f59e0b;color:#fff;padding:8px 14px;border:1px solid #e2e8f0;white-space:nowrap;font-size:12px';
+  var tdBord='border:1px solid #e2e8f0;padding:6px 12px;font-size:12px';
+
+  var paisName={GT:'Guatemala',HN:'Honduras',SV:'El Salvador'}[DATA.pais||'']||DATA.pais||'';
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    +'<style>table{border-collapse:collapse}tr:nth-child(even)td{background:#fff8e6}'
+    +'td{'+tdBord+'}</style></head><body>'
+    +'<div style="font-size:15px;font-weight:800;margin-bottom:14px">Participación QR — Ferco Cerámica '+paisName+'</div>';
+
+  /* Sección 1: evolución semanal */
+  html+='<div style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Avance semanal por módulo QR</div>';
+  if (!hasColData) {
+    html+='<p style="background:#fffbeb;border:1px solid #fcd34d;padding:8px 14px;border-radius:8px;color:#92400e;font-size:12px">'
+      +'Sin datos por módulo. Ejecuta "Reparar Historial" en el admin para habilitarlos.</p>';
+  } else {
+    html+='<table><thead><tr>'
+      +'<th style="'+thStyle+'">Semana</th><th style="'+thStyle+'">Fecha</th>';
+    qrCols.forEach(function(col){ html+='<th style="'+thStyle+'">'+col+'</th>'; });
+    html+='<th style="'+thStyle+'">Participantes</th><th style="'+thStyle+'">Total</th><th style="'+thStyle+'">%</th></tr></thead><tbody>';
+    semRows.forEach(function(row) {
+      html+='<tr><td style="text-align:center;font-weight:700">Sem '+row.sem+'</td><td>'+row.fecha+'</td>';
+      qrCols.forEach(function(col){ html+=cell(row.colAvgs[col]); });
+      html+=cellN(row.qrN, row.tot)+'</tr>';
+    });
+    html+='</tbody></table>';
+  }
+
+  /* Sección 2: por sucursal, último corte */
+  var lastSemCv = semMap[sems[sems.length-1]];
+  html+='<div style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin:22px 0 8px">Por sucursal — Semana '+sems[sems.length-1]+'</div>';
+  html+='<table><thead><tr><th style="'+thStyle+'">Sucursal</th>';
+  qrCols.forEach(function(col){ html+='<th style="'+thStyle+'">'+col+'</th>'; });
+  html+='<th style="'+thStyle+'">Part. QR</th><th style="'+thStyle+'">%</th></tr></thead><tbody>';
+  sucsBdo.forEach(function(suc) {
+    var sd=latestSd(lastSemCv, suc);
+    html+='<tr><td style="font-weight:600">'+suc+'</td>';
+    qrCols.forEach(function(col){
+      html+=cell(sd&&sd.bdo_qr_cols?sd.bdo_qr_cols[col]:null);
+    });
+    var qrN2=sd?sd.bdo_qr_n||0:0, tot2=sd?sd.bdo_total||0:0;
+    html+=cellN(qrN2,tot2)+'</tr>';
+  });
+  html+='</tbody></table></body></html>';
+
+  var fname='Ferco_'+(DATA.pais||'XX')+'_Part_QR_'+new Date().toISOString().slice(0,10)+'.xls';
+  var blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;a.download=fname;document.body.appendChild(a);a.click();
+  document.body.removeChild(a);URL.revokeObjectURL(url);
 }
 
 function _applyTabVisibility(tn) {

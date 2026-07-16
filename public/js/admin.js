@@ -1583,8 +1583,24 @@ function repairHistorico() {
 
       if (hasBdo) {
         entry.bdo_total   = bdoRows.length;
-        if (qrCols.length)  { entry.bdo_qr_n    = countPart(bdoRows, qrCols);  }
-        if (vidCols.length) { entry.bdo_video_n  = countPart(bdoRows, vidCols); }
+        if (qrCols.length) {
+          entry.bdo_qr_n = countPart(bdoRows, qrCols);
+          var qrPerCol = {};
+          qrCols.forEach(function(col) {
+            var vals = bdoRows.map(function(r) { return parseFloat((r.valores && r.valores[col]) || 0); });
+            qrPerCol[col] = vals.length ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length) : 0;
+          });
+          entry.bdo_qr_cols = qrPerCol;
+        }
+        if (vidCols.length) {
+          entry.bdo_video_n = countPart(bdoRows, vidCols);
+          var vidPerCol = {};
+          vidCols.forEach(function(col) {
+            var vals = bdoRows.map(function(r) { return parseFloat((r.valores && r.valores[col]) || 0); });
+            vidPerCol[col] = vals.length ? Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length) : 0;
+          });
+          entry.bdo_vid_cols = vidPerCol;
+        }
       }
       if (has4x4) {
         entry['4x4_total'] = x4xRows.length;
